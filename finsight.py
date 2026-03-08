@@ -601,7 +601,7 @@ with right_col:
             messages_html = (
                 "<p style='color:rgba(255,255,255,0.35); text-align:center; "
                 "margin-top:160px; font-size:0.92rem; line-height:1.6;'>"
-                "✨ <strong>FinSight is ready!</strong><br/>"
+                "✅ <strong>FinSight is ready!</strong><br/>"
                 "Ask about revenue trends, risk factors, or segment performance.<br/>"
                 'Add <strong>"chart"</strong> or <strong>"graph"</strong> to get a visual report!</p>'
             )
