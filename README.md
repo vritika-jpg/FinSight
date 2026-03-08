@@ -51,16 +51,18 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 
 ---
 
-## 🔍 Hallucination Analysis
+## 📊 Visual Reports
 
-Guardrails built into the system prompt:
-- *"Never guess or use outside knowledge to fill gaps"*
-- Every answer must cite company + document section + fiscal year
+Add `chart`, `graph`, `plot`, `visualize`, or `diagram` to any question to generate an interactive Plotly chart directly from the documents.
 
-**Known hallucination triggers:**
-- Azure standalone revenue — Microsoft doesn't disclose this separately
-- Market share figures — never in 10-K filings
-- Partial retrieval — if only 1 of 3 companies' chunks are fetched, gaps may be filled confidently
+| Example Query | Chart Type |
+|---------------|------------|
+| *"Bar chart of total revenue for all three companies in 2024"* | Bar |
+| *"Line graph of Amazon's revenue from 2022 to 2024"* | Line |
+| *"Pie chart of Microsoft's revenue segments"* | Pie |
+| *"Bar chart of cloud revenue across Google, Amazon, and Microsoft"* | Bar |
+
+The LLM extracts the relevant figures, selects the appropriate chart type, and generates a plain-English explanation — all in one query.
 
 ---
 
