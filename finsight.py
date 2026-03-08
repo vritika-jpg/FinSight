@@ -22,7 +22,7 @@ if not OPENAI_API_KEY:
     
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
-── PAGE CONFIG ───────────────────────────────────────────────────────────────
+#── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="FinSight",
     page_icon="📈",
