@@ -22,7 +22,7 @@ if not OPENAI_API_KEY:
     
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
-# ── PAGE CONFIG ───────────────────────────────────────────────────────────────
+── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="FinSight",
     page_icon="📈",
@@ -46,6 +46,8 @@ if "confirm_reset" not in st.session_state:
     st.session_state.confirm_reset = False
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "charts" not in st.session_state:
+    st.session_state.charts = {}  # keyed by message index
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = '''You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence. 
@@ -65,6 +67,116 @@ Your tone:
 - Professional but conversational — like a senior analyst briefing an executive
 - Concise: lead with the direct answer, then support with detail
 - Never use filler phrases like "Great question!" or "Certainly!"'''
+
+# ── VISUAL REPORT SYSTEM PROMPT ───────────────────────────────────────────────
+VISUAL_PROMPT = '''You are FinSight, an expert financial analyst. The user wants a VISUAL REPORT.
+
+Your job:
+1. Extract the relevant numbers from the context provided
+2. Return a JSON object (and nothing else) in this exact format:
+
+{{
+  "chart_type": "bar" | "line" | "pie",
+  "title": "Chart title here",
+  "explanation": "2-3 sentence plain-english explanation of what the chart shows and key takeaways",
+  "data": {{
+    "labels": ["Label1", "Label2", ...],
+    "datasets": [
+      {{
+        "name": "Series name (e.g. company name or year)",
+        "values": [123.4, 456.7, ...]
+      }}
+    ]
+  }},
+  "unit": "$ Billions" | "$ Millions" | "%" | "other"
+}}
+
+Chart type selection rules:
+- Use "bar" for comparing values across companies or categories
+- Use "line" for showing trends over multiple years
+- Use "pie" for showing composition/breakdown of a single entity
+
+CRITICAL RULES:
+- Return ONLY the JSON. No markdown, no explanation outside the JSON, no backticks.
+- If the user asks about multiple companies, you MUST include ALL of them as separate labels or datasets. Never omit a company.
+- If a value is missing for one company, use 0 and note it in the explanation.
+- If the data is not available in the context at all, return: {{"error": "Data not available in the uploaded 10-K filings."}}'''
+
+# ── VISUAL INTENT DETECTION ───────────────────────────────────────────────────
+VISUAL_KEYWORDS = [
+    "chart", "graph", "plot", "visualize", "visualise", "visual",
+    "show me a", "draw", "diagram", "compare visually", "visual report",
+    "bar chart", "pie chart", "line chart", "line graph", "bar graph"
+]
+
+def is_visual_request(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in VISUAL_KEYWORDS)
+
+# ── CHART RENDERER ────────────────────────────────────────────────────────────
+def render_chart(chart_data: dict) -> go.Figure | None:
+    if "error" in chart_data:
+        return None
+
+    chart_type = chart_data.get("chart_type", "bar")
+    title      = chart_data.get("title", "")
+    datasets   = chart_data["data"]["datasets"]
+    labels     = chart_data["data"]["labels"]
+    unit       = chart_data.get("unit", "")
+
+    # Shared dark theme layout
+    layout = dict(
+        title=dict(text=title, font=dict(color="white", size=16), x=0.5),
+        paper_bgcolor="rgba(17,45,31,0)",
+        plot_bgcolor="rgba(255,255,255,0.03)",
+        font=dict(color="rgba(255,255,255,0.85)", family="DM Sans"),
+        legend=dict(bgcolor="rgba(255,255,255,0.05)", bordercolor="rgba(255,255,255,0.1)", borderwidth=1),
+        margin=dict(t=60, b=60, l=60, r=30),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.08)", zerolinecolor="rgba(255,255,255,0.1)"),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", zerolinecolor="rgba(255,255,255,0.1)",
+                   title=unit if unit else ""),
+    )
+
+    COLORS = ["#f0c040", "#4ade80", "#60a5fa", "#f87171", "#a78bfa", "#fb923c"]
+
+    if chart_type == "pie":
+        values = datasets[0]["values"] if datasets else []
+        fig = go.Figure(go.Pie(
+            labels=labels,
+            values=values,
+            marker=dict(colors=COLORS[:len(labels)],
+                        line=dict(color="rgba(17,45,31,1)", width=2)),
+            textfont=dict(color="white"),
+            hovertemplate="%{label}: %{value} " + unit + "<extra></extra>",
+        ))
+        fig.update_layout(**{k: v for k, v in layout.items() if k not in ("xaxis", "yaxis")})
+
+    elif chart_type == "line":
+        fig = go.Figure()
+        for i, ds in enumerate(datasets):
+            fig.add_trace(go.Scatter(
+                x=labels, y=ds["values"], name=ds["name"],
+                mode="lines+markers",
+                line=dict(color=COLORS[i % len(COLORS)], width=2.5),
+                marker=dict(size=7),
+                hovertemplate="%{x}: %{y} " + unit + "<extra>" + ds["name"] + "</extra>",
+            ))
+        fig.update_layout(**layout)
+
+    else:  # bar (default)
+        fig = go.Figure()
+        for i, ds in enumerate(datasets):
+            fig.add_trace(go.Bar(
+                x=labels, y=ds["values"], name=ds["name"],
+                marker=dict(color=COLORS[i % len(COLORS)],
+                            line=dict(color="rgba(255,255,255,0.1)", width=1)),
+                hovertemplate="%{x}: %{y} " + unit + "<extra>" + ds["name"] + "</extra>",
+            ))
+        if len(datasets) > 1:
+            fig.update_layout(barmode="group")
+        fig.update_layout(**layout)
+
+    return fig
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -129,7 +241,6 @@ st.markdown("""
         letter-spacing: 0.2px;
     }
 
-    /* Chat container */
     .chat-scroll-area {
         border: 1px solid rgba(255,255,255,0.12);
         border-radius: 20px;
@@ -143,41 +254,35 @@ st.markdown("""
         gap: 0.5rem;
     }
 
-    /* Custom message wrapper */
     .message-wrapper {
         display: flex;
         flex-direction: column;
         max-width: 75%;
         margin: 0.2rem 0;
     }
-    
     .message-wrapper.user {
         margin-left: auto;
         margin-right: 0;
         align-items: flex-end;
     }
-    
     .message-wrapper.assistant {
         margin-right: auto;
         margin-left: 0;
         align-items: flex-start;
     }
 
-    /* Message bubble */
     .message-bubble {
         padding: 0.7rem 1rem;
         border-radius: 18px;
         position: relative;
         word-wrap: break-word;
     }
-    
     .message-bubble.user {
         background: linear-gradient(135deg, #f0c040 0%, #d4a834 100%);
         color: #1a1a1a;
         border-bottom-right-radius: 4px;
         margin-right: 0.5rem;
     }
-    
     .message-bubble.assistant {
         background: rgba(255,255,255,0.08);
         color: rgba(255,255,255,0.95);
@@ -186,7 +291,6 @@ st.markdown("""
         margin-left: 0.5rem;
     }
 
-    /* Sender label inside bubble */
     .sender-label {
         font-size: 0.7rem;
         font-weight: 700;
@@ -195,51 +299,48 @@ st.markdown("""
         margin-bottom: 0.35rem;
         opacity: 0.7;
     }
-    
-    .message-bubble.user .sender-label {
-        color: rgba(26,26,26,0.6);
-        text-align: right;
-    }
-    
-    .message-bubble.assistant .sender-label {
-        color: rgba(255,255,255,0.6);
-        text-align: left;
-    }
+    .message-bubble.user .sender-label { color: rgba(26,26,26,0.6); text-align: right; }
+    .message-bubble.assistant .sender-label { color: rgba(255,255,255,0.6); text-align: left; }
 
-    /* Message content */
     .message-content {
         font-size: 0.93rem;
         line-height: 1.55;
         white-space: pre-wrap;
         word-wrap: break-word;
     }
-    
-    .message-bubble.user .message-content {
-        color: #1a1a1a;
-    }
-    
-    .message-bubble.assistant .message-content {
-        color: rgba(255,255,255,0.95);
-    }
+    .message-bubble.user .message-content { color: #1a1a1a; }
+    .message-bubble.assistant .message-content { color: rgba(255,255,255,0.95); }
 
-    /* Timestamp */
-    .message-time {
-        font-size: 0.68rem;
-        margin-top: 0.25rem;
-        opacity: 0.5;
+    .message-time { font-size: 0.68rem; margin-top: 0.25rem; opacity: 0.5; }
+    .message-bubble.user .message-time { color: rgba(26,26,26,0.5); text-align: right; }
+    .message-bubble.assistant .message-time { color: rgba(255,255,255,0.5); text-align: left; }
+
+    .chart-container {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 20px;
+        padding: 0.75rem 1.5rem 0.25rem 1.5rem;
+        margin-top: 1rem;
     }
-    
-    .message-bubble.user .message-time {
-        color: rgba(26,26,26,0.5);
-        text-align: right;
-    }
-    
-    .message-bubble.assistant .message-time {
+    .chart-label {
         color: rgba(255,255,255,0.5);
-        text-align: left;
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin: 0 0 0.25rem 0;
+    }
+    .chart-explanation {
+        color: rgba(255,255,255,0.75);
+        font-size: 0.9rem;
+        line-height: 1.6;
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        background: rgba(255,255,255,0.04);
+        border-left: 3px solid #f0c040;
+        border-radius: 0 8px 8px 0;
     }
 
-    /* Chat input */
     .stChatInputContainer {
         border: 1px solid rgba(255,255,255,0.15) !important;
         border-radius: 16px !important;
@@ -319,7 +420,6 @@ st.markdown("""
         border-color: rgba(240,192,64,0.65) !important;
     }
 
-    /* Hide default Streamlit chat message chrome */
     [data-testid="stChatMessage"] {
         padding: 0 !important;
         margin: 0 !important;
@@ -328,27 +428,13 @@ st.markdown("""
     }
     [data-testid="stChatMessageAvatar"] { display: none !important; }
 </style>
-
-<!-- FIX: Auto-scroll chat to bottom on load/update -->
-<script>
-    function scrollChatToBottom() {
-        const chatArea = document.querySelector('.chat-scroll-area');
-        if (chatArea) {
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-    }
-    // Run on load and after short delay for dynamic content
-    document.addEventListener('DOMContentLoaded', scrollChatToBottom);
-    setTimeout(scrollChatToBottom, 300);
-    setTimeout(scrollChatToBottom, 800);
-</script>
 """, unsafe_allow_html=True)
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="demo-header">
     <h1>📈 FinSight</h1>
-    <p>Real-time financial insights!</p>
+    <p>Real-time financial insights — ask anything, or say "show me a chart of..." for visual reports!</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -415,9 +501,26 @@ with left_col:
                 st.session_state.confirm_reset = False
                 st.rerun()
 
+    # Visual report hint
+    st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:rgba(240,192,64,0.07); border:1px solid rgba(240,192,64,0.2);
+                border-radius:12px; padding:0.9rem 1rem;">
+        <p style="color:#f0c040; font-size:0.78rem; font-weight:700; margin:0 0 0.4rem 0;
+                  text-transform:uppercase; letter-spacing:0.5px;">📊 Visual Reports</p>
+        <p style="color:rgba(255,255,255,0.65); font-size:0.82rem; margin:0; line-height:1.5;">
+            Add <strong style="color:rgba(255,255,255,0.9);">"chart"</strong>, 
+            <strong style="color:rgba(255,255,255,0.9);">"graph"</strong>, or 
+            <strong style="color:rgba(255,255,255,0.9);">"visualize"</strong> to any 
+            question to get an interactive chart.<br><br>
+            e.g. <em style="color:rgba(255,255,255,0.55);">"Bar chart of cloud revenue across all three companies"</em>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
 with right_col:
     st.markdown('<p class="section-title">💬 Ask me your finance-related questions!</p>', unsafe_allow_html=True)
-    
+
     if st.session_state.get("messages"):
         chat_export = "\n\n".join([
             f"{'You' if m['role'] == 'user' else 'FinSight'}: {m['content']}"
@@ -449,7 +552,6 @@ with right_col:
                     unsafe_allow_html=True
                 )
                 progress_bar.progress(int((i / total) * 70))
-
                 temp_file_path = os.path.join(temp_dir, file.name)
                 with open(temp_file_path, "wb") as f:
                     f.write(file.getbuffer())
@@ -471,6 +573,7 @@ with right_col:
         embeddings = OpenAIEmbeddings()
         st.session_state.vector_store = FAISS.from_documents(docs, embeddings)
         st.session_state.messages = []
+        st.session_state.charts = {}
 
         progress_bar.progress(100)
         status.empty()
@@ -491,15 +594,15 @@ with right_col:
         """, unsafe_allow_html=True)
 
     else:
-        # FIX: Build the entire chat HTML in one pass — no duplicate rendering
+        # Build chat HTML
         messages_html = ""
         if not st.session_state.messages:
             messages_html = (
                 "<p style='color:rgba(255,255,255,0.35); text-align:center; "
                 "margin-top:160px; font-size:0.92rem; line-height:1.6;'>"
                 "✨ <strong>FinSight is ready!</strong><br/>"
-                "Ask about revenue trends, risk factors, or segment performance<br/>"
-                "from your uploaded 10-K filings.</p>"
+                "Ask about revenue trends, risk factors, or segment performance.<br/>"
+                "Add <strong>\"chart\"</strong> or <strong>\"graph\"</strong> to get a visual report!</p>"
             )
         else:
             for message in st.session_state.messages[-20:]:
@@ -507,7 +610,6 @@ with right_col:
                 sender = "You" if is_user else "FinSight"
                 msg_class = "user" if is_user else "assistant"
                 timestamp = message.get("timestamp", "")
-                # Escape HTML special chars in content to prevent injection/rendering bugs
                 content = (
                     message["content"]
                     .replace("&", "&amp;")
@@ -515,8 +617,6 @@ with right_col:
                     .replace(">", "&gt;")
                 )
                 time_html = f'<div class="message-time">{timestamp}</div>' if timestamp else ""
-                # No leading whitespace — Streamlit's Markdown renderer treats
-                # 4-space-indented HTML as a code block, showing raw tags as text.
                 messages_html += (
                     f'<div class="message-wrapper {msg_class}">'
                     f'<div class="message-bubble {msg_class}">'
@@ -526,24 +626,15 @@ with right_col:
                     f'</div></div>'
                 )
 
-        # FIX: Use a unique ID so the JS scroll targets the right element
         st.markdown(f"""
         <div class="chat-scroll-area" id="chat-scroll-area">
             {messages_html}
         </div>
-        <script>
-            // Scroll the chat area to the bottom after render
-            (function() {{
-                var el = document.getElementById('chat-scroll-area');
-                if (el) el.scrollTop = el.scrollHeight;
-            }})();
-        </script>
         """, unsafe_allow_html=True)
 
-        user_input = st.chat_input("Ask FinSight about your 10-K filings…")
+        user_input = st.chat_input("Ask anything — or say 'show me a chart of...' for visuals!")
 
-        # PHASE 1: User just submitted — save message and rerun immediately so it
-        # appears in the chat before we do any LLM work.
+        # PHASE 1: Save message, rerun to show it immediately
         if user_input:
             current_time = datetime.datetime.now().strftime("%I:%M %p")
             st.session_state.messages.append({
@@ -555,15 +646,54 @@ with right_col:
             st.session_state.query_start_time = time.time()
             st.rerun()
 
-        # PHASE 2: A pending query exists — run the LLM now that the user message
-        # is already visible in the chat.
+        # PHASE 2: Process the pending query
         if st.session_state.get("pending_query"):
-            pending = st.session_state.pending_query
+            pending    = st.session_state.pending_query
             start_time = st.session_state.query_start_time
+            visual     = is_visual_request(pending)
 
-            qa_prompt = PromptTemplate(
-                input_variables=["context", "question"],
-                template=f"""{SYSTEM_PROMPT}
+            if visual:
+                # Visual path: use structured JSON prompt
+                visual_qa_prompt = PromptTemplate(
+                    input_variables=["context", "question"],
+                    template=f"""{VISUAL_PROMPT}
+
+Context from 10-K filings:
+{{context}}
+
+User request: {{question}}
+
+JSON:"""
+                )
+                qa_chain = RetrievalQA.from_chain_type(
+                    llm=ChatOpenAI(model="gpt-4o", temperature=0.0),
+                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 12}),
+                    chain_type="stuff",
+                    chain_type_kwargs={"prompt": visual_qa_prompt}
+                )
+                with st.spinner("FinSight is building your visual report…"):
+                    response = qa_chain.invoke({"query": pending})
+
+                raw = response["result"].strip()
+                # Strip any accidental markdown fences
+                raw = re.sub(r"^```json\s*", "", raw)
+                raw = re.sub(r"^```\s*",     "", raw)
+                raw = re.sub(r"\s*```$",     "", raw)
+
+                try:
+                    chart_data   = json.loads(raw)
+                    response_text = "Visual report generated — see chart below!"
+                    # Store chart keyed by current message index
+                    msg_idx = len(st.session_state.messages)
+                    st.session_state.charts[msg_idx] = chart_data
+                except json.JSONDecodeError:
+                    response_text = "I wasn't able to extract structured data for a chart from the documents. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
+
+            else:
+                # Standard text path
+                qa_prompt = PromptTemplate(
+                    input_variables=["context", "question"],
+                    template=f"""{SYSTEM_PROMPT}
 
 Use the following excerpts from the 10-K filings to answer the question.
 
@@ -573,27 +703,23 @@ Context:
 Question: {{question}}
 
 Answer:"""
-            )
+                )
+                qa_chain = RetrievalQA.from_chain_type(
+                    llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
+                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 4}),
+                    chain_type="stuff",
+                    chain_type_kwargs={"prompt": qa_prompt}
+                )
+                with st.spinner("FinSight is thinking…"):
+                    response = qa_chain.invoke({"query": pending})
+                response_text = response["result"]
 
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
-                retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 4}),
-                chain_type="stuff",
-                chain_type_kwargs={"prompt": qa_prompt}
-            )
-
-            with st.spinner("FinSight is thinking…"):
-                response = qa_chain.invoke({"query": pending})
-
-            response_text = response["result"]
             response_time = datetime.datetime.now().strftime("%I:%M %p")
             elapsed_time  = time.time() - start_time
 
-            # Clear pending before saving response
             del st.session_state.pending_query
             del st.session_state.query_start_time
 
-            # Save assistant message to state
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": response_text,
@@ -622,6 +748,34 @@ Answer:"""
             })
 
             st.rerun()
+
+# ── VISUAL REPORT CHARTS (full width, below columns) ─────────────────────────
+if st.session_state.get("charts"):
+    for msg_idx in sorted(st.session_state.charts.keys()):
+        chart_info = st.session_state.charts[msg_idx]
+        fig = render_chart(chart_info)
+        if fig:
+            chart_title = chart_info.get("title", "Visual Report")
+            explanation = chart_info.get("explanation", "")
+            # Build the full container as one html block so nothing escapes
+            st.markdown(f"""
+<div class="chart-container">
+<p class="chart-label">📊 {chart_title}</p>
+</div>""", unsafe_allow_html=True)
+            # Plotly chart must be rendered via st.plotly_chart (can't go in markdown)
+            st.plotly_chart(fig, use_container_width=True, config={
+                "displayModeBar": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "displaylogo": False,
+            })
+            if explanation:
+                st.markdown(
+                    f'<div class="chart-explanation">💡 {explanation}</div>',
+                    unsafe_allow_html=True
+                )
+            st.markdown("<hr style='border-color:rgba(255,255,255,0.06); margin: 0.5rem 0 1.5rem 0;'>", unsafe_allow_html=True)
+        elif "error" in chart_info:
+            st.warning(chart_info["error"])
 
 # ── DETAILED ANALYTICS EXPANDER ───────────────────────────────────────────────
 st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
