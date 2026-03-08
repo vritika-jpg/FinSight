@@ -62,7 +62,7 @@ Add `chart`, `graph`, `plot`, `visualize`, or `diagram` to any question to gener
 | *"Pie chart of Microsoft's revenue segments"* | Pie |
 | *"Bar chart of cloud revenue across Google, Amazon, and Microsoft"* | Bar |
 
-The LLM extracts the relevant figures, selects the appropriate chart type, and generates a plain-English explanation — all in one query.
+The LLM extracts the relevant figures, selects the appropriate chart type, and generates a plain-English explanation in a single query.
 
 ---
 
