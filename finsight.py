@@ -442,7 +442,7 @@ st.markdown("""
 
 # ── METRICS ROW ───────────────────────────────────────────────────────────────
 doc_count   = len(st.session_state.get("uploaded_files", []))
-chunk_count = st.session_state.get("chunk_count", 0)
+_count = st.session_state.get("_count", 0)
 queries     = st.session_state.analytics["queries"]
 cost        = f"${st.session_state.analytics['total_cost']:.4f}"
 
@@ -453,8 +453,8 @@ st.markdown(f"""
         <div class="metric-value">{doc_count}</div>
     </div>
     <div class="metric-container">
-        <div class="metric-label">🔍 Chunks</div>
-        <div class="metric-value">{chunk_count}</div>
+        <div class="metric-label">🔍 s</div>
+        <div class="metric-value">{_count}</div>
     </div>
     <div class="metric-container">
         <div class="metric-label">⚡ Queries</div>
@@ -567,7 +567,7 @@ with right_col:
         )
         progress_bar.progress(80)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         docs = text_splitter.split_documents(documents)
         st.session_state.chunk_count = len(docs)
 
