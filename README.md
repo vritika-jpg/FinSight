@@ -4,7 +4,7 @@
 
 ---
 
-## 🚀 Live Demo
+## 🚀 Working Demo
 
 🔗 [Launch FinSight on Streamlit Cloud](https://finsightrag.streamlit.app/)
 
