@@ -453,7 +453,7 @@ st.markdown(f"""
         <div class="metric-value">{doc_count}</div>
     </div>
     <div class="metric-container">
-        <div class="metric-label">🔍 s</div>
+        <div class="metric-label">🔍 chunks</div>
         <div class="metric-value">{_count}</div>
     </div>
     <div class="metric-container">
@@ -567,7 +567,7 @@ with right_col:
         )
         progress_bar.progress(80)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         docs = text_splitter.split_documents(documents)
         st.session_state.chunk_count = len(docs)
 
