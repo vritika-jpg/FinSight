@@ -1,6 +1,8 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+import json
+import re
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -8,6 +10,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_classic.chains import RetrievalQA
 from langchain_core.prompts import PromptTemplate
+import plotly.graph_objects as go
 import tempfile
 import time
 import tiktoken
@@ -19,10 +22,10 @@ OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     st.error("❌ OPENAI_API_KEY is not set. Add it to Streamlit secrets or your environment.")
     st.stop()
-    
+
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
-#── PAGE CONFIG ───────────────────────────────────────────────────────────────
+# ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="FinSight",
     page_icon="📈",
@@ -114,7 +117,7 @@ def is_visual_request(query: str) -> bool:
     return any(kw in q for kw in VISUAL_KEYWORDS)
 
 # ── CHART RENDERER ────────────────────────────────────────────────────────────
-def render_chart(chart_data: dict) -> go.Figure | None:
+def render_chart(chart_data: dict):
     if "error" in chart_data:
         return None
 
@@ -124,7 +127,6 @@ def render_chart(chart_data: dict) -> go.Figure | None:
     labels     = chart_data["data"]["labels"]
     unit       = chart_data.get("unit", "")
 
-    # Shared dark theme layout
     layout = dict(
         title=dict(text=title, font=dict(color="white", size=16), x=0.5),
         paper_bgcolor="rgba(17,45,31,0)",
@@ -602,7 +604,7 @@ with right_col:
                 "margin-top:160px; font-size:0.92rem; line-height:1.6;'>"
                 "✨ <strong>FinSight is ready!</strong><br/>"
                 "Ask about revenue trends, risk factors, or segment performance.<br/>"
-                "Add <strong>\"chart\"</strong> or <strong>\"graph\"</strong> to get a visual report!</p>"
+                'Add <strong>"chart"</strong> or <strong>"graph"</strong> to get a visual report!</p>'
             )
         else:
             for message in st.session_state.messages[-20:]:
@@ -653,7 +655,6 @@ with right_col:
             visual     = is_visual_request(pending)
 
             if visual:
-                # Visual path: use structured JSON prompt
                 visual_qa_prompt = PromptTemplate(
                     input_variables=["context", "question"],
                     template=f"""{VISUAL_PROMPT}
@@ -674,23 +675,26 @@ JSON:"""
                 with st.spinner("FinSight is building your visual report…"):
                     response = qa_chain.invoke({"query": pending})
 
-                raw = response["result"].strip()
+                # Safely extract result string regardless of response shape
+                if isinstance(response, dict):
+                    raw = str(response.get("result") or response.get("output") or "").strip()
+                else:
+                    raw = str(response).strip()
+
                 # Strip any accidental markdown fences
-                raw = re.sub(r"^```json\s*", "", raw)
-                raw = re.sub(r"^```\s*",     "", raw)
-                raw = re.sub(r"\s*```$",     "", raw)
+                raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
+                raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
+                raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
 
                 try:
-                    chart_data   = json.loads(raw)
+                    chart_data    = json.loads(raw)
                     response_text = "Visual report generated — see chart below!"
-                    # Store chart keyed by current message index
                     msg_idx = len(st.session_state.messages)
                     st.session_state.charts[msg_idx] = chart_data
                 except json.JSONDecodeError:
-                    response_text = "I wasn't able to extract structured data for a chart from the documents. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
+                    response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
 
             else:
-                # Standard text path
                 qa_prompt = PromptTemplate(
                     input_variables=["context", "question"],
                     template=f"""{SYSTEM_PROMPT}
@@ -712,7 +716,11 @@ Answer:"""
                 )
                 with st.spinner("FinSight is thinking…"):
                     response = qa_chain.invoke({"query": pending})
-                response_text = response["result"]
+
+                if isinstance(response, dict):
+                    response_text = str(response.get("result") or response.get("output") or "").strip()
+                else:
+                    response_text = str(response).strip()
 
             response_time = datetime.datetime.now().strftime("%I:%M %p")
             elapsed_time  = time.time() - start_time
@@ -757,12 +765,7 @@ if st.session_state.get("charts"):
         if fig:
             chart_title = chart_info.get("title", "Visual Report")
             explanation = chart_info.get("explanation", "")
-            # Build the full container as one html block so nothing escapes
-            st.markdown(f"""
-<div class="chart-container">
-<p class="chart-label">📊 {chart_title}</p>
-</div>""", unsafe_allow_html=True)
-            # Plotly chart must be rendered via st.plotly_chart (can't go in markdown)
+            st.markdown(f'<div class="chart-container"><p class="chart-label">📊 {chart_title}</p></div>', unsafe_allow_html=True)
             st.plotly_chart(fig, use_container_width=True, config={
                 "displayModeBar": True,
                 "modeBarButtonsToRemove": ["lasso2d", "select2d"],
