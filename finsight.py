@@ -521,7 +521,6 @@ with left_col:
     """, unsafe_allow_html=True)
 
 with right_col:
-    st.markdown('<p class="section-title">💬 Ask me your finance-related questions!</p>', unsafe_allow_html=True)
 
     if st.session_state.get("messages"):
         chat_export = "\n\n".join([
