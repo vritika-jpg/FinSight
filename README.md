@@ -6,7 +6,7 @@
 
 ## 🚀 Live Demo
 
-🔗 [Launch FinSight on Streamlit Cloud]((https://finsightrag.streamlit.app/))
+🔗 [Launch FinSight on Streamlit Cloud](https://finsightrag.streamlit.app/)
 
 ---
 
