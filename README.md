@@ -60,12 +60,12 @@ Streamed Response / Visual Report
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Chunk Size | 1000 tokens | Balanced context vs. noise |
-| Chunk Overlap | 100 tokens | Prevents context loss at boundaries |
+| Chunk Size | 1000 tokens | Best all-rounder across query types — see experiment below |
+| Chunk Overlap | 100 tokens | 10% overlap prevents context loss at boundaries |
 | Retrieval Top-K (text) | 4 | Sufficient for factual Q&A |
-| Retrieval Top-K (visual) | 12 | Higher to capture all 3 companies |
+| Retrieval Top-K (visual) | 12 | Higher to ensure all 3 companies are captured |
 | Embedding Model | text-embedding-ada-002 | OpenAI hosted |
-| LLM Temperature | 0.1 (text), 0.0 (visual) | Low for factual accuracy |
+| LLM Temperature | 0.1 (text), 0.0 (visual) | Low for factual accuracy; 0.0 for deterministic JSON |
 
 ---
 
@@ -94,7 +94,22 @@ Add any of these keywords to your question to trigger a chart:
 
 ---
 
-## 🧪 Model & Settings Comparison
+## 🧪 Model & Settings Experiments
+
+### Chunk Size Comparison
+
+We tested three chunk sizes using the same three queries across all settings:
+1. *"What was Amazon's total revenue in 2024?"*
+2. *"Compare operating income across all three companies in 2024"*
+3. *"What are the main risk factors Microsoft disclosed?"*
+
+| Chunk Size | Overlap | Observed Strength | Observed Weakness |
+|------------|---------|-------------------|-------------------|
+| 500 | 50 | Retrieved Alphabet's exact operating income total ($112.4B) — small chunks captured the precise summary line | Lost Microsoft's total operating income entirely; chunk too small to capture consolidated figures |
+| **1000** ✅ | **100** | **Consistent across all queries — returned Amazon + Microsoft totals with full segment breakdowns** | **Alphabet's absolute total missing; retrieved segment year-over-year deltas instead** |
+| 1500 | 150 | Most complete cross-company comparison with richer year-over-year narrative context | Risk factors answer drifted toward IP/AI topics rather than staying focused on core cybersecurity section |
+
+**Conclusion:** No single chunk size won on every query. 1000 was chosen as the best all-rounder — 500 was inconsistent across companies and 1500 introduced noise on focused retrieval tasks.
 
 ### GPT-4o vs DeepSeek
 *(Results from Fahda's evaluation — see presentation for full details)*
@@ -104,16 +119,7 @@ Add any of these keywords to your question to trigger a chart:
 | Factual Accuracy | ✅ High | *(TBD)* |
 | Response Speed | *(TBD)* | *(TBD)* |
 | Hallucination Rate | *(TBD)* | *(TBD)* |
-| Cost | Higher | Lower |
-
-### Chunk Size Comparison
-*(Results from chunk size experiments — see presentation for full details)*
-
-| Chunk Size | Overlap | Observation |
-|------------|---------|-------------|
-| 500 | 50 | *(TBD)* |
-| 1000 | 100 | ✅ Current setting — balanced |
-| 1500 | 150 | *(TBD)* |
+| Cost per Query | ~$0.01–0.03 | Lower |
 
 ---
 
@@ -121,15 +127,16 @@ Add any of these keywords to your question to trigger a chart:
 
 FinSight is designed to resist hallucination through:
 - Explicit system prompt instruction: *"Never guess or use outside knowledge to fill gaps"*
+- Forced source attribution — every answer must cite the company and document section
+- Fiscal year requirement on every financial figure
+- Low temperature (0.1) to reduce speculative generation
 - Source-grounded retrieval — answers only from uploaded documents
-- Low temperature (0.1) to reduce creativity in factual responses
 
-**Known boundary cases:**
-- Azure standalone revenue (Microsoft does not disclose this separately — a common hallucination trigger)
-- Questions referencing data outside the uploaded filing years
-- Market share figures (never reported in 10-Ks)
-
-*(See presentation for documented hallucination examples and analysis)*
+**Known boundary cases where hallucination risk is elevated:**
+- **Azure standalone revenue** — Microsoft does not disclose this as a separate line item in their 10-K (only "Intelligent Cloud" segment is reported). This is a documented hallucination trigger.
+- **Market share figures** — never reported in 10-K filings; model should refuse but may speculate
+- **Queries outside uploaded filing years** — no temporal boundary enforcement
+- **Partial retrieval** — if only 1 of 3 companies' chunks are retrieved, the model may fill gaps confidently
 
 ---
 
@@ -157,7 +164,7 @@ Run the app:
 streamlit run finsight.py
 ```
 
-Then upload the 10-K PDFs for Alphabet, Amazon, and Microsoft via the sidebar.
+Then upload the 10-K PDFs for Alphabet, Amazon, and Microsoft via the file uploader in the left panel.
 
 ---
 
@@ -188,8 +195,9 @@ faiss-cpu · tiktoken · pypdf · plotly · openai
 ## ⚠️ Important Notes
 
 - **API Key:** Never commit your OpenAI API key to a public repository. Use Streamlit secrets or environment variables.
-- **10-K Files:** The PDFs are not included in this repository. Upload them directly via the app interface.
+- **10-K Files:** The PDFs are not included in this repository due to file size. Upload them directly via the app interface.
 - **Session State:** All data (chat history, vector store, charts) is stored in-session and resets on page refresh.
+- **Cost:** Each query costs approximately $0.01–0.03 depending on document size and response length.
 
 ---
 
