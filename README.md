@@ -37,7 +37,7 @@ An AI-powered chatbot that analyzes 10-K filings for **Alphabet**, **Amazon**, a
 
 ---
 
-## 🧪 Chunk Size Experiment
+## 🧪 Chunk Size Trial
 
 Tested with three queries: Amazon revenue, cross-company operating income, and Microsoft risk factors.
 
