@@ -567,7 +567,7 @@ with right_col:
         )
         progress_bar.progress(80)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
         docs = text_splitter.split_documents(documents)
         st.session_state.chunk_count = len(docs)
 
