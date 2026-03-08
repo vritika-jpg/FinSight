@@ -453,7 +453,7 @@ st.markdown(f"""
         <div class="metric-value">{doc_count}</div>
     </div>
     <div class="metric-container">
-        <div class="metric-label">🔍 chunks</div>
+        <div class="metric-label">🔍 Chunks</div>
         <div class="metric-value">{_count}</div>
     </div>
     <div class="metric-container">
