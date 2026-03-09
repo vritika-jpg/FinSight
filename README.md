@@ -46,8 +46,8 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 | Chunk Size | Strength | Weakness |
 |------------|----------|----------|
 | 500 | Got Alphabet's exact total ($112.4B) | Lost Microsoft's total entirely |
-| **1000** | Consistent results across all three companies | Alphabet total missing; got segment deltas instead |
-| 1500 | Richest cross-company narrative | Risk factors drifted to IP/AI topics vs. core cybersecurity |
+| 1000 | Consistent results across all three companies | Alphabet total missing; got segment deltas instead |
+| **1500** | Richest cross-company narrative, full context | Risk factors drifted to IP/AI topics vs. core cybersecurity |
 
 **We decided to go with the 1500 chunk size.** Reasoning: 500 chunk size was inconsistent across companies; and 1000 chunk size was still not giving the model the entire context. Anything above 1500 was too noisy. 
 
