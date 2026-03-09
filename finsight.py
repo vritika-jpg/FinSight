@@ -50,7 +50,7 @@ if "confirm_reset" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "charts" not in st.session_state:
-    st.session_state.charts = {}  # keyed by message index
+    st.session_state.charts = {}
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = '''You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence. 
@@ -63,6 +63,7 @@ Your behavior:
 - If the answer is not found in the provided documents, say clearly: 
   "This information is not available in the uploaded 10-K filings." 
   Never guess or use outside knowledge to fill gaps.
+- If the question is subjective or ambiguous (e.g. "which company is best?", "who is winning?", "who is doing better?"), do NOT refuse. Instead, interpret it as a financial performance comparison and answer using the most relevant available metrics such as revenue, operating income, net income, or growth rate. Structure your answer company by company and let the data speak for itself.
 - For financial figures, always include units (billions, millions, %) and the time period
 - Flag any notable risks or caveats when discussing financial health
 
@@ -442,7 +443,7 @@ st.markdown("""
 
 # ── METRICS ROW ───────────────────────────────────────────────────────────────
 doc_count   = len(st.session_state.get("uploaded_files", []))
-_count = st.session_state.get("_count", 0)
+chunk_count = st.session_state.get("chunk_count", 0)
 queries     = st.session_state.analytics["queries"]
 cost        = f"${st.session_state.analytics['total_cost']:.4f}"
 
@@ -454,7 +455,7 @@ st.markdown(f"""
     </div>
     <div class="metric-container">
         <div class="metric-label">🔍 Chunks</div>
-        <div class="metric-value">{_count}</div>
+        <div class="metric-value">{chunk_count}</div>
     </div>
     <div class="metric-container">
         <div class="metric-label">⚡ Queries</div>
@@ -503,7 +504,6 @@ with left_col:
                 st.session_state.confirm_reset = False
                 st.rerun()
 
-    # Visual report hint
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
     st.markdown("""
     <div style="background:rgba(240,192,64,0.07); border:1px solid rgba(240,192,64,0.2);
@@ -595,7 +595,6 @@ with right_col:
         """, unsafe_allow_html=True)
 
     else:
-        # Build chat HTML
         messages_html = ""
         if not st.session_state.messages:
             messages_html = (
@@ -635,7 +634,6 @@ with right_col:
 
         user_input = st.chat_input("Ask anything — or say 'show me a chart of...' for visuals!")
 
-        # PHASE 1: Save message, rerun to show it immediately
         if user_input:
             current_time = datetime.datetime.now().strftime("%I:%M %p")
             st.session_state.messages.append({
@@ -647,7 +645,6 @@ with right_col:
             st.session_state.query_start_time = time.time()
             st.rerun()
 
-        # PHASE 2: Process the pending query
         if st.session_state.get("pending_query"):
             pending    = st.session_state.pending_query
             start_time = st.session_state.query_start_time
@@ -674,13 +671,11 @@ JSON:"""
                 with st.spinner("FinSight is building your visual report…"):
                     response = qa_chain.invoke({"query": pending})
 
-                # Safely extract result string regardless of response shape
                 if isinstance(response, dict):
                     raw = str(response.get("result") or response.get("output") or "").strip()
                 else:
                     raw = str(response).strip()
 
-                # Strip any accidental markdown fences
                 raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
@@ -733,7 +728,6 @@ Answer:"""
                 "timestamp": response_time
             })
 
-            # Update analytics
             encoding      = tiktoken.encoding_for_model("gpt-4o")
             input_tokens  = len(encoding.encode(pending))
             output_tokens = len(encoding.encode(response_text))
@@ -756,7 +750,7 @@ Answer:"""
 
             st.rerun()
 
-# ── VISUAL REPORT CHARTS (full width, below columns) ─────────────────────────
+# ── VISUAL REPORT CHARTS ──────────────────────────────────────────────────────
 if st.session_state.get("charts"):
     for msg_idx in sorted(st.session_state.charts.keys()):
         chart_info = st.session_state.charts[msg_idx]
@@ -803,9 +797,9 @@ with st.expander("📊 Detailed Analytics", expanded=False):
     </div>
     """, unsafe_allow_html=True)
 
-# ── FOOTER ─────────────────────────────────────────────────────────────────
+# ── FOOTER ────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    "<p class='footer'>FinSight &nbsp;•&nbsp; Vritika Narra •&nbsp; Megan Huber •&nbsp; Fahda Alajmi •&nbsp; Yuying Ding •&nbsp; Jialu Li •&nbsp; Zhiruo Zhao</p>",
+    "<p class='footer'>FinSight &nbsp;•&nbsp; Vritika Narra &nbsp;•&nbsp; Megan Huber &nbsp;•&nbsp; Fahda Alajmi &nbsp;•&nbsp; Yuying Ding &nbsp;•&nbsp; Jialu Li &nbsp;•&nbsp; Zhiruo Zhao</p>",
     unsafe_allow_html=True
 )
