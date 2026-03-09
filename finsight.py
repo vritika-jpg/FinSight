@@ -688,7 +688,7 @@ with right_col:
 Context from 10-K filings:
 {{context}}
 
-User request: {{question}}
+User request: {{query}}
 
 JSON:"""
                 )
