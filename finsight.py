@@ -31,6 +31,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# ── CACHED LLM INSTANCES ──────────────────────────────────────────────────────
+@st.cache_resource
+def get_llm_precise():
+    return ChatOpenAI(model="gpt-4o", temperature=0.0)
+
+@st.cache_resource
+def get_llm_creative():
+    return ChatOpenAI(model="gpt-4o", temperature=0.1)
+
+@st.cache_resource
+def get_embeddings():
+    return OpenAIEmbeddings(model="text-embedding-3-small")
+
 # ── SESSION STATE INIT ────────────────────────────────────────────────────────
 def init_session_state():
     defaults = {
@@ -555,7 +568,7 @@ with right_col:
 
     if st.session_state.get("messages"):
         chat_export = "\n\n".join([
-            f"{'You' if m['role'] == 'user' else 'FinSight'}: {m['content']}"
+            f"[{m.get('timestamp', '')}] {'You' if m['role'] == 'user' else 'FinSight'}: {m['content']}"
             for m in st.session_state.messages
         ])
         _, btn_col = st.columns([4, 1])
@@ -570,7 +583,16 @@ with right_col:
     st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
 
     # ── DOCUMENT PROCESSING ───────────────────────────────────────────────────
-    if uploaded_files and st.session_state.get("vector_store") is None:
+    files_signature = tuple(f.name for f in uploaded_files) if uploaded_files else ()
+    needs_processing = (
+        uploaded_files and (
+            st.session_state.get("vector_store") is None or
+            st.session_state.get("files_signature") != files_signature
+        )
+    )
+
+    if needs_processing:
+        st.session_state.files_signature = files_signature
         status = st.empty()
         progress_bar = st.progress(0)
 
@@ -588,7 +610,7 @@ with right_col:
                 with open(temp_file_path, "wb") as f:
                     f.write(file.getbuffer())
                 loader = PyPDFLoader(temp_file_path)
-                docs = loader.load()
+                raw_docs = loader.load()
                 company = file.name.lower()
                 if "amazon" in company:
                     company_name = "Amazon"
@@ -598,10 +620,10 @@ with right_col:
                     company_name = "Microsoft"
                 else:
                     company_name = file.name
-                for d in docs:
+                for d in raw_docs:
                     d.metadata["company"] = company_name
                     d.metadata["source"] = file.name
-                documents.extend(docs)
+                documents.extend(raw_docs)
 
         status.markdown(
             "<p style='color:rgba(255,255,255,0.7); font-size:0.9rem;'>"
@@ -611,12 +633,11 @@ with right_col:
         progress_bar.progress(80)
 
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
-        docs = text_splitter.split_documents(documents)
-        st.session_state.chunk_count = len(docs)
+        split_docs = text_splitter.split_documents(documents)
+        st.session_state.chunk_count = len(split_docs)
 
         progress_bar.progress(95)
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        st.session_state.vector_store = FAISS.from_documents(docs, embeddings)
+        st.session_state.vector_store = FAISS.from_documents(split_docs, get_embeddings())
         st.session_state.messages = []
         st.session_state.chat_history = []
         st.session_state.charts = {}
@@ -699,48 +720,59 @@ with right_col:
             pending    = st.session_state.pending_query
             start_time = st.session_state.query_start_time
             visual     = is_visual_request(pending)
+            encoding   = tiktoken.encoding_for_model("gpt-4o")
 
             retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
 
-            if visual:
-                docs    = retriever.invoke(pending)
-                context = "\n\n".join([d.page_content for d in docs])
-                prompt  = build_visual_prompt(context, pending)
+            try:
+                if visual:
+                    retrieved_docs = retriever.invoke(pending)
+                    context        = "\n\n".join([d.page_content for d in retrieved_docs])
+                    prompt         = build_visual_prompt(context, pending)
+                    input_tokens   = len(encoding.encode(prompt))
 
-                with st.spinner("FinSight is building your visual report…"):
-                    llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-                    raw = llm.invoke(prompt).content.strip()
+                    with st.spinner("FinSight is building your visual report…"):
+                        raw = get_llm_precise().invoke(prompt).content.strip()
 
-                raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
-                raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
-                raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
+                    output_tokens = len(encoding.encode(raw))
 
-                try:
-                    chart_data    = json.loads(raw)
-                    response_text = "Visual report generated — see chart below!"
-                    msg_idx = len(st.session_state.messages)
-                    st.session_state.charts[msg_idx] = chart_data
-                except json.JSONDecodeError:
-                    response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
+                    raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
+                    raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
+                    raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
 
-            else:
-                history_context = ""
-                if st.session_state.chat_history:
-                    last_human, last_ai = st.session_state.chat_history[-1]
-                    history_context = f"Previous question: {last_human}\nPrevious answer summary: {last_ai[:300]}\n\nFollow-up: "
-                enriched_query = history_context + pending
+                    try:
+                        chart_data    = json.loads(raw)
+                        response_text = "Visual report generated — see chart below!"
+                        msg_idx = len(st.session_state.messages)
+                        st.session_state.charts[msg_idx] = chart_data
+                    except json.JSONDecodeError:
+                        response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
 
-                docs    = retriever.invoke(enriched_query)
-                context = "\n\n".join([d.page_content for d in docs])
-                prompt  = build_qa_prompt(context, enriched_query)
+                else:
+                    history_context = ""
+                    if st.session_state.chat_history:
+                        last_human, last_ai = st.session_state.chat_history[-1]
+                        history_context = f"Previous question: {last_human}\nPrevious answer summary: {last_ai[:300]}\n\nFollow-up: "
+                    enriched_query = history_context + pending
 
-                with st.spinner("FinSight is thinking…"):
-                    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
-                    response_text = llm.invoke(prompt).content.strip()
+                    retrieved_docs = retriever.invoke(enriched_query)
+                    context        = "\n\n".join([d.page_content for d in retrieved_docs])
+                    prompt         = build_qa_prompt(context, enriched_query)
+                    input_tokens   = len(encoding.encode(prompt))
 
-                st.session_state.chat_history.append((pending, response_text))
-                if len(st.session_state.chat_history) > 6:
-                    st.session_state.chat_history = st.session_state.chat_history[-6:]
+                    with st.spinner("FinSight is thinking…"):
+                        response_text = get_llm_creative().invoke(prompt).content.strip()
+
+                    output_tokens = len(encoding.encode(response_text))
+
+                    st.session_state.chat_history.append((pending, response_text))
+                    if len(st.session_state.chat_history) > 6:
+                        st.session_state.chat_history = st.session_state.chat_history[-6:]
+
+            except Exception as e:
+                response_text = f"⚠️ Something went wrong while contacting the AI. Please try again.\n\nDetails: {str(e)}"
+                input_tokens  = 0
+                output_tokens = 0
 
             response_time = datetime.datetime.now().strftime("%I:%M %p")
             elapsed_time  = time.time() - start_time
@@ -754,11 +786,8 @@ with right_col:
                 "timestamp": response_time
             })
 
-            encoding      = tiktoken.encoding_for_model("gpt-4o")
-            input_tokens  = len(encoding.encode(pending))
-            output_tokens = len(encoding.encode(response_text))
-            tokens        = input_tokens + output_tokens
-            query_cost    = (input_tokens / 1_000_000 * 2.50) + (output_tokens / 1_000_000 * 10.00)
+            tokens     = input_tokens + output_tokens
+            query_cost = (input_tokens / 1_000_000 * 2.50) + (output_tokens / 1_000_000 * 10.00)
 
             current_queries = st.session_state.analytics["queries"]
             new_queries     = current_queries + 1
@@ -776,28 +805,34 @@ with right_col:
 
             st.rerun()
 
-# ── VISUAL REPORT CHARTS ──────────────────────────────────────────────────────
-if st.session_state.get("charts"):
-    for msg_idx in sorted(st.session_state.charts.keys()):
-        chart_info = st.session_state.charts[msg_idx]
-        fig = render_chart(chart_info)
-        if fig:
-            chart_title = chart_info.get("title", "Visual Report")
-            explanation = chart_info.get("explanation", "")
-            st.markdown(f'<div class="chart-container"><p class="chart-label">📊 {chart_title}</p></div>', unsafe_allow_html=True)
-            st.plotly_chart(fig, use_container_width=True, config={
-                "displayModeBar": True,
-                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-                "displaylogo": False,
-            })
-            if explanation:
-                st.markdown(
-                    f'<div class="chart-explanation">💡 {explanation}</div>',
-                    unsafe_allow_html=True
-                )
-            st.markdown("<hr style='border-color:rgba(255,255,255,0.06); margin: 0.5rem 0 1.5rem 0;'>", unsafe_allow_html=True)
-        elif "error" in chart_info:
-            st.warning(chart_info["error"])
+        # ── VISUAL REPORT CHARTS (inside right_col) ───────────────────────────
+        if st.session_state.get("charts"):
+            for msg_idx in sorted(st.session_state.charts.keys()):
+                chart_info = st.session_state.charts[msg_idx]
+                fig = render_chart(chart_info)
+                if fig:
+                    chart_title = chart_info.get("title", "Visual Report")
+                    explanation = chart_info.get("explanation", "")
+                    st.markdown(
+                        f'<div class="chart-container"><p class="chart-label">📊 {chart_title}</p></div>',
+                        unsafe_allow_html=True
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={
+                        "displayModeBar": True,
+                        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                        "displaylogo": False,
+                    })
+                    if explanation:
+                        st.markdown(
+                            f'<div class="chart-explanation">💡 {explanation}</div>',
+                            unsafe_allow_html=True
+                        )
+                    st.markdown(
+                        "<hr style='border-color:rgba(255,255,255,0.06); margin: 0.5rem 0 1.5rem 0;'>",
+                        unsafe_allow_html=True
+                    )
+                elif "error" in chart_info:
+                    st.warning(chart_info["error"])
 
 # ── DETAILED ANALYTICS EXPANDER ───────────────────────────────────────────────
 st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
