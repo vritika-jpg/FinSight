@@ -87,7 +87,7 @@ OPENAI_API_KEY = "your-key-here"
 streamlit run finsight.py
 ```
 
-Upload the 10-K PDFs via the left panel to activate the chatbot.
+Upload the 10-K PDFs on the left panel to activate the chatbot.
 
 ---
 
