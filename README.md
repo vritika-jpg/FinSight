@@ -1,6 +1,6 @@
 # 📈 FinSight — RAG-Powered Financial Intelligence Chatbot
 
-An AI-powered chatbot that analyzes 10-K filings for **Alphabet**, **Amazon**, and **Microsoft** using Retrieval-Augmented Generation (RAG) and GPT-4o.
+An AI-powered chatbot that analyzes 10-K filings and other financial documents for publicly filed companies using Retrieval-Augmented Generation (RAG) and GPT-4o.
 
 🔗 [Live Streamlit Demo](https://finsightrag.streamlit.app/)
 
