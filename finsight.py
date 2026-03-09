@@ -695,7 +695,9 @@ JSON:"""
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.0),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 12}),
+                    chain_type_kwargs={"prompt": visual_qa_prompt}
                 )
+            
                 with st.spinner("FinSight is building your visual report…"):
                     response = qa_chain.invoke({"query": pending})
 
