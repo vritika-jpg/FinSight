@@ -688,10 +688,7 @@ JSON:"""
                 )
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.0),
-                    retriever=st.session_state.vector_store.as_retriever(
-                        search_type="similarity_score_threshold",
-                        search_kwargs={"k": 12, "score_threshold": 0.2}
-                ),
+                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 12}),                ),
                     chain_type="stuff",
                     chain_type_kwargs={"prompt": visual_qa_prompt}
                 )
@@ -739,10 +736,7 @@ Answer:"""
                 )
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
-                    retriever=st.session_state.vector_store.as_retriever(
-                        search_type="similarity_score_threshold",
-                        search_kwargs={"k": 8, "score_threshold": 0.3}
-),
+                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
                     chain_type="stuff",
                     chain_type_kwargs={"prompt": qa_prompt}
                 )
