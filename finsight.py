@@ -10,7 +10,6 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_classic.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain_core.prompts import PromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
-from langchain_core.prompts import PromptTemplate
 import plotly.graph_objects as go
 import tempfile
 import time
@@ -122,7 +121,7 @@ VISUAL_KEYWORDS = [
     "chart", "graph", "plot", "visualize", "visualise", "visual",
     "show me a", "draw", "diagram", "compare visually", "visual report",
     "bar chart", "pie chart", "line chart", "line graph", "bar graph", "chart",
-    "graph", "plot", "visualize", "trend", "growth", "compare", "over time"
+    "graph", "plot", "visualize", "growth", "over time"
 ]
 
 def is_visual_request(query: str) -> bool:
@@ -595,7 +594,7 @@ with right_col:
         st.session_state.chunk_count = len(docs)
 
         progress_bar.progress(95)
-        embeddings = OpenAIEmbeddings()
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
         st.session_state.vector_store = FAISS.from_documents(docs, embeddings)
         st.session_state.messages = []
         st.session_state.chat_history = []
@@ -688,7 +687,7 @@ with right_col:
 Context from 10-K filings:
 {{context}}
 
-User request: {{query}}
+User request: {{question}}
 
 JSON:"""
                 )
@@ -699,7 +698,7 @@ JSON:"""
                 )
             
                 with st.spinner("FinSight is building your visual report…"):
-                    response = qa_chain.invoke({"query": pending})
+                    response = qa_chain.invoke({"question": pending})
 
                 if isinstance(response, dict):
                     raw = str(response.get("result") or response.get("output") or "").strip()
@@ -743,6 +742,7 @@ Answer:"""
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
+                    chain_type_kwargs={"prompt": qa_prompt}
                 )
 
                 with st.spinner("FinSight is thinking…"):
