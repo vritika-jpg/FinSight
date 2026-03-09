@@ -88,32 +88,34 @@ Your job:
 1. Extract the relevant numbers from the context provided
 2. Return a JSON object (and nothing else) in this exact format:
 
-{{
-  "chart_type": "bar" | "line" | "pie",
-  "title": "Chart title here",
-  "explanation": "2-3 sentence plain-english explanation of what the chart shows and key takeaways",
-  "data": {{
-    "labels": ["Label1", "Label2", ...],
+{
+  "chart_type": "bar",
+  "title": "Cloud Revenue Comparison 2024",
+  "explanation": "AWS leads with $90.8B, followed by Azure at $60.2B and Google Cloud at $33.1B. AWS maintains market dominance but Azure shows fastest growth.",
+  "data": {
+    "labels": ["Amazon AWS", "Microsoft Azure", "Google Cloud"],
     "datasets": [
-      {{
-        "name": "Series name (e.g. company name or year)",
-        "values": [123.4, 456.7, ...]
-      }}
+      {
+        "name": "2024 Revenue",
+        "values": [90.8, 60.2, 33.1]
+      }
     ]
-  }},
-  "unit": "$ Billions" | "$ Millions" | "%" | "other"
-}}
+  },
+  "unit": "$ Billions"
+}
 
 Chart type selection rules:
 - Use "bar" for comparing values across companies or categories
-- Use "line" for showing trends over multiple years
-- Use "pie" for showing composition/breakdown of a single entity
+- Use "line" for showing trends over multiple years (e.g., 2022, 2023, 2024)
+- Use "pie" for showing composition/breakdown of a single entity (e.g., Amazon's revenue by segment)
 
 CRITICAL RULES:
 - Return ONLY the JSON. No markdown, no explanation outside the JSON, no backticks.
-- If the user asks about multiple companies, you MUST include ALL of them as separate labels or datasets. Never omit a company.
+- If the user asks about multiple companies, you MUST include ALL of them.
 - If a value is missing for one company, use 0 and note it in the explanation.
-- If the data is not available in the context at all, return: {{"error": "Data not available in the uploaded 10-K filings."}}'''
+- If the data is not available in the context at all, return: {"error": "Data not available in the uploaded 10-K filings."}
+- For pie charts, use "labels" for categories and ONE dataset with "values"
+- Always specify the fiscal year in the title when applicable'''
 
 # ── VISUAL INTENT DETECTION ───────────────────────────────────────────────────
 VISUAL_KEYWORDS = [
