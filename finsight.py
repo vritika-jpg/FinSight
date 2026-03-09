@@ -621,7 +621,7 @@ with left_col:
             <strong style="color:rgba(255,255,255,0.9);">"graph"</strong>, or
             <strong style="color:rgba(255,255,255,0.9);">"visualize"</strong> to any
             question to get an interactive chart.<br><br>
-            e.g. <em style="color:rgba(255,255,255,0.55);">"Bar chart of cloud revenue across all three companies"</em>
+            e.g. <em style="color:rgba(255,255,255,0.55);">"Bar chart of revenue across all three companies"</em>
         </p>
     </div>
     """, unsafe_allow_html=True)
