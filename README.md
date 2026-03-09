@@ -39,6 +39,20 @@ With the low temperature approach along with giving the RAG a strictly objective
 
 ---
 
+## ⚙️ Tech Stack
+
+| Component               | Tool           |
+| ----------------------- | -------------- |
+| UI                      | Streamlit      |
+| RAG Framework           | LangChain      |
+| Vector Database         | FAISS          |
+| Embeddings              | OpenAI Ada-002 |
+| LLM                     | GPT-4o         |
+| Visualization           | Plotly         |
+| Local Model Experiments | Ollama         |
+
+---
+
 ## 🧪 Chunk Size Trial
 
 Tested with three queries: Amazon revenue, cross-company operating income, and Microsoft risk factors.
