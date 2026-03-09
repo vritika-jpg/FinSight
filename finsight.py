@@ -33,7 +33,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ── SESSION STATE INIT (REPLACEMENT) ───────────────────────────────────────────
+# ── SESSION STATE INIT ────────────────────────────────────────────────────────
 def init_session_state():
     defaults = {
         "analytics": {"queries": 0, "total_tokens": 0, "total_cost": 0.0, "avg_response_time": 0.0},
@@ -51,14 +51,13 @@ def init_session_state():
             st.session_state[k] = v
 
 def reset_app_state():
-    for key in ["analytics", "uploaded_files", "chunk_count", "confirm_reset", 
+    for key in ["analytics", "uploaded_files", "chunk_count", "confirm_reset",
                 "messages", "chat_history", "charts", "vector_store", "files_signature"]:
         if key in st.session_state:
             del st.session_state[key]
     init_session_state()
 
 init_session_state()
-
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = '''You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence. 
@@ -120,8 +119,8 @@ CRITICAL RULES:
 VISUAL_KEYWORDS = [
     "chart", "graph", "plot", "visualize", "visualise", "visual",
     "show me a", "draw", "diagram", "compare visually", "visual report",
-    "bar chart", "pie chart", "line chart", "line graph", "bar graph", "chart",
-    "graph", "plot", "visualize", "growth", "over time"
+    "bar chart", "pie chart", "line chart", "line graph", "bar graph",
+    "growth", "over time"
 ]
 
 def is_visual_request(query: str) -> bool:
@@ -195,7 +194,7 @@ def render_chart(chart_data: dict):
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans  :wght@300;400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
 
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     .stApp { background: #112d1f; min-height: 100vh; }
@@ -659,11 +658,10 @@ with right_col:
         user_input = st.chat_input("Ask anything — or say 'show me a chart of...' for visuals!")
 
         if user_input:
-            # Safety check: ensure vector_store is ready before processing
             if st.session_state.get("vector_store") is None:
                 st.error("⚠️ Vector store not initialized. Please upload documents first.")
                 st.stop()
-            
+
             current_time = datetime.datetime.now().strftime("%I:%M %p")
             st.session_state.messages.append({
                 "role": "user",
@@ -674,6 +672,7 @@ with right_col:
             st.session_state.query_start_time = time.time()
             st.rerun()
 
+        # ── QUERY PROCESSING ──────────────────────────────────────────────────
         if st.session_state.get("pending_query"):
             pending    = st.session_state.pending_query
             start_time = st.session_state.query_start_time
@@ -691,20 +690,17 @@ User request: {{question}}
 
 JSON:"""
                 )
-                qa_chain = RetrievalQA.from_chain_type(
+
+                visual_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.0),
-                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 12}),
+                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
                     chain_type_kwargs={"prompt": visual_qa_prompt}
                 )
-            
+
                 with st.spinner("FinSight is building your visual report…"):
-                    response = qa_chain.invoke({"question": pending})
+                    response = visual_chain.invoke({"query": pending})
 
-                if isinstance(response, dict):
-                    raw = str(response.get("result") or response.get("output") or "").strip()
-                else:
-                    raw = str(response).strip()
-
+                raw = str(response.get("result", "")).strip()
                 raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
@@ -718,7 +714,6 @@ JSON:"""
                     response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
 
             else:
-                # Build enriched query by prepending recent history for better retrieval
                 history_context = ""
                 if st.session_state.chat_history:
                     last_human, last_ai = st.session_state.chat_history[-1]
@@ -739,6 +734,7 @@ Question: {{question}}
 
 Answer:"""
                 )
+
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
@@ -746,14 +742,10 @@ Answer:"""
                 )
 
                 with st.spinner("FinSight is thinking…"):
-                    response = qa_chain.invoke({"question": enriched_query})
+                    response = qa_chain.invoke({"query": enriched_query})
 
-                if isinstance(response, dict):
-                    response_text = str(response.get("result") or response.get("output") or "").strip()
-                else:
-                    response_text = str(response).strip()
+                response_text = str(response.get("result", "")).strip()
 
-                # Keep last 6 turns in history
                 st.session_state.chat_history.append((pending, response_text))
                 if len(st.session_state.chat_history) > 6:
                     st.session_state.chat_history = st.session_state.chat_history[-6:]
