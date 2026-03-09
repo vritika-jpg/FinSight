@@ -66,7 +66,7 @@ The LLM extracts the relevant figures, selects the appropriate chart type, and g
 
 ---
 
-## 🚀 Running Locally
+## Notes on Running the App Locally
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/finsight.git
