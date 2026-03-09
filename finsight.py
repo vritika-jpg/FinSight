@@ -706,43 +706,39 @@ JSON:"""
                     response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
 
             else:
-                # Condense follow-up questions into standalone queries before retrieval
-                condense_prompt = PromptTemplate.from_template(
-                    "Given the chat history and a follow-up question, rewrite the follow-up "
-                    "as a fully standalone question that includes all necessary context "
-                    "(company names, metrics, years). Never use pronouns like 'it', 'that', 'they' "
-                    "or vague references — always name the company and metric explicitly.\n\n"
-                    "Chat History: {chat_history}\n"
-                    "Follow-up: {question}\n"
-                    "Standalone question:"
-                )
+                # Build enriched query by prepending recent history for better retrieval
+                history_context = ""
+                if st.session_state.chat_history:
+                    last_human, last_ai = st.session_state.chat_history[-1]
+                    history_context = f"Previous question: {last_human}\nPrevious answer summary: {last_ai[:300]}\n\nFollow-up: "
+                enriched_query = history_context + pending
 
-                system_message_prompt = SystemMessagePromptTemplate.from_template(
-                    SYSTEM_PROMPT + "\n\nUse the following context from the 10-K filings to answer:\n{context}"
-                )
-                human_message_prompt = HumanMessagePromptTemplate.from_template("{question}")
-                chat_prompt = ChatPromptTemplate.from_messages([
-                    system_message_prompt,
-                    human_message_prompt
-                ])
+                qa_prompt = PromptTemplate(
+                    input_variables=["context", "question"],
+                    template=f"""{SYSTEM_PROMPT}
 
-                conv_chain = ConversationalRetrievalChain.from_llm(
+Use the following excerpts from the 10-K filings to answer the question.
+If this is a follow-up question, use the conversation history below to understand what metric or company is being referenced.
+
+Context:
+{{context}}
+
+Question: {{question}}
+
+Answer:"""
+                )
+                qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 6}),
-                    condense_question_prompt=condense_prompt,
-                    combine_docs_chain_kwargs={"prompt": chat_prompt},
-                    return_source_documents=False,
-                    verbose=False,
+                    chain_type="stuff",
+                    chain_type_kwargs={"prompt": qa_prompt}
                 )
 
                 with st.spinner("FinSight is thinking…"):
-                    response = conv_chain.invoke({
-                        "question": pending,
-                        "chat_history": st.session_state.chat_history
-                    })
+                    response = qa_chain.invoke({"query": enriched_query})
 
                 if isinstance(response, dict):
-                    response_text = str(response.get("answer") or response.get("result") or response.get("output") or "").strip()
+                    response_text = str(response.get("result") or response.get("output") or "").strip()
                 else:
                     response_text = str(response).strip()
 
