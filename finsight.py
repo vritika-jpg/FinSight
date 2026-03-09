@@ -8,7 +8,8 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain_classic.chains import RetrievalQA
+from langchain_classic.chains import RetrievalQA, ConversationalRetrievalChain
+from langchain_core.prompts import PromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 from langchain_core.prompts import PromptTemplate
 import plotly.graph_objects as go
 import tempfile
@@ -49,6 +50,8 @@ if "confirm_reset" not in st.session_state:
     st.session_state.confirm_reset = False
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []  # (human, ai) tuples for ConversationalRetrievalChain
 if "charts" not in st.session_state:
     st.session_state.charts = {}
 
@@ -587,6 +590,7 @@ with right_col:
         embeddings = OpenAIEmbeddings()
         st.session_state.vector_store = FAISS.from_documents(docs, embeddings)
         st.session_state.messages = []
+        st.session_state.chat_history = []
         st.session_state.charts = {}
 
         progress_bar.progress(100)
@@ -702,32 +706,50 @@ JSON:"""
                     response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
 
             else:
-                qa_prompt = PromptTemplate(
-                    input_variables=["context", "question"],
-                    template=f"""{SYSTEM_PROMPT}
-
-Use the following excerpts from the 10-K filings to answer the question.
-
-Context:
-{{context}}
-
-Question: {{question}}
-
-Answer:"""
+                # Condense follow-up questions into standalone queries before retrieval
+                condense_prompt = PromptTemplate.from_template(
+                    "Given the chat history and a follow-up question, rewrite the follow-up "
+                    "as a fully standalone question that includes all necessary context "
+                    "(company names, metrics, years). Never use pronouns like 'it', 'that', 'they' "
+                    "or vague references — always name the company and metric explicitly.\n\n"
+                    "Chat History: {chat_history}\n"
+                    "Follow-up: {question}\n"
+                    "Standalone question:"
                 )
-                qa_chain = RetrievalQA.from_chain_type(
+
+                system_message_prompt = SystemMessagePromptTemplate.from_template(
+                    SYSTEM_PROMPT + "\n\nUse the following context from the 10-K filings to answer:\n{context}"
+                )
+                human_message_prompt = HumanMessagePromptTemplate.from_template("{question}")
+                chat_prompt = ChatPromptTemplate.from_messages([
+                    system_message_prompt,
+                    human_message_prompt
+                ])
+
+                conv_chain = ConversationalRetrievalChain.from_llm(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 6}),
-                    chain_type="stuff",
-                    chain_type_kwargs={"prompt": qa_prompt}
+                    condense_question_prompt=condense_prompt,
+                    combine_docs_chain_kwargs={"prompt": chat_prompt},
+                    return_source_documents=False,
+                    verbose=False,
                 )
+
                 with st.spinner("FinSight is thinking…"):
-                    response = qa_chain.invoke({"query": pending})
+                    response = conv_chain.invoke({
+                        "question": pending,
+                        "chat_history": st.session_state.chat_history
+                    })
 
                 if isinstance(response, dict):
-                    response_text = str(response.get("result") or response.get("output") or "").strip()
+                    response_text = str(response.get("answer") or response.get("result") or response.get("output") or "").strip()
                 else:
                     response_text = str(response).strip()
+
+                # Keep last 6 turns in history
+                st.session_state.chat_history.append((pending, response_text))
+                if len(st.session_state.chat_history) > 6:
+                    st.session_state.chat_history = st.session_state.chat_history[-6:]
 
             response_time = datetime.datetime.now().strftime("%I:%M %p")
             elapsed_time  = time.time() - start_time
