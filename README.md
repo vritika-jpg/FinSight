@@ -15,7 +15,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 | Megan Huber | Demo + Troubleshooting |
 | Jialu Li | Question Formulation |
 | Fahda Alajmi | DeepSeek vs GPT-4o vs Gemini Model Comparison |
-| Zhiruo Zhao | UPDATE |
+| Zhiruo Zhao | Documentation |
 
 ---
 
@@ -23,7 +23,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 **Model:** GPT-4o with a custom financial analyst system prompt that enforces source citation, fiscal year attribution, and no outside knowledge.
 
-**Architecture:** LangChain `RetrievalQA` → FAISS vector store → OpenAI Ada-002 embeddings → GPT-4o
+**Architecture:** Custom RAG pipeline with manual retrieval → FAISS vector store → OpenAI Ada-002 embeddings → GPT-4o
 
 **RAG Settings:**
 
@@ -31,9 +31,9 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 |-----------|-------|
 | Chunk Size | 1500 tokens |
 | Chunk Overlap | 200 tokens |
-| Top-K (text queries) | 8 |
-| Top-K (visual queries) | 12 |
-| Temperature | 0.1 (text), 0.0 (visual) |
+| Top-K (retrieval) | 15 |
+| Temperature (text queries) | 0.1 |
+| Temperature (visual queries) | 0.0 |
 
 With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. *The tradeoff was that not all questions got answered.*
 
@@ -44,7 +44,7 @@ With the low temperature approach along with giving the RAG a strictly objective
 | Component               | Tool           |
 | ----------------------- | -------------- |
 | UI                      | Streamlit      |
-| RAG Framework           | LangChain      |
+| RAG Framework           | LangChain (for document loading/splitting only) |
 | Vector Database         | FAISS          |
 | Embeddings              | OpenAI Ada-002 |
 | LLM                     | GPT-4o         |
@@ -97,7 +97,7 @@ Ada-002 provided the most consistent retrieval quality when searching across mul
 
 FinSight uses a Retrieval-Augmented Generation pipeline:
 
-10-K PDFs → Text Chunking → OpenAI Ada Embeddings → FAISS Vector Store → LangChain RetrievalQA → GPT-4o → Answer + Source Citation + Plotly Visualization
+10-K PDFs → Text Chunking (1500 tokens, 200 overlap) → OpenAI Ada Embeddings → FAISS Vector Store → Manual Retrieval (k=15) → Custom Prompt Construction → GPT-4o → Answer + Source Citation + Plotly Visualization
 
 ---
 
