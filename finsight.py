@@ -121,7 +121,8 @@ CRITICAL RULES:
 VISUAL_KEYWORDS = [
     "chart", "graph", "plot", "visualize", "visualise", "visual",
     "show me a", "draw", "diagram", "compare visually", "visual report",
-    "bar chart", "pie chart", "line chart", "line graph", "bar graph"
+    "bar chart", "pie chart", "line chart", "line graph", "bar graph", "chart",
+    "graph", "plot", "visualize", "trend", "growth", "compare", "over time"
 ]
 
 def is_visual_request(query: str) -> bool:
