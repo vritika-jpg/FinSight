@@ -67,6 +67,14 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 
 ---
 
+## 🧩 System Architecture
+
+FinSight uses a Retrieval-Augmented Generation pipeline:
+
+10-K PDFs → Text Chunking → OpenAI Ada Embeddings → FAISS Vector Store → LangChain RetrievalQA → GPT-4o → Answer + Source Citation + Plotly Visualization
+
+---
+
 ## 📊 Visual Reports
 
 Add `chart`, `graph`, `plot`, `visualize`, or `diagram` to any question to generate an interactive Plotly chart directly from the documents.
