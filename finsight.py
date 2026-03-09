@@ -8,8 +8,6 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain_classic.chains import RetrievalQA, ConversationalRetrievalChain
-from langchain_core.prompts import PromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 import plotly.graph_objects as go
 import tempfile
 import time
@@ -60,15 +58,15 @@ def reset_app_state():
 init_session_state()
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = '''You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence. 
+SYSTEM_PROMPT = """You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence.
 You have deep expertise in analyzing 10-K filings for Alphabet (Google), Amazon, and Microsoft.
 
 Your behavior:
 - Always specify WHICH company and WHICH document section your answer comes from
 - When citing numbers, always include the fiscal year (e.g. "Amazon's 2024 10-K states...")
 - If a question asks you to compare companies, structure your answer company by company
-- If the answer is not found in the provided documents, say clearly: 
-  "This information is not available in the uploaded 10-K filings." 
+- If the answer is not found in the provided documents, say clearly:
+  "This information is not available in the uploaded 10-K filings."
   Never guess or use outside knowledge to fill gaps.
 - If the question is subjective or ambiguous (e.g. "which company is best?", "who is winning?", "who is doing better?"), do NOT refuse. Instead, interpret it as a financial performance comparison and answer using the most relevant available metrics such as revenue, operating income, net income, or growth rate. Structure your answer company by company and let the data speak for itself.
 - For financial figures, always include units (billions, millions, %) and the time period
@@ -77,10 +75,10 @@ Your behavior:
 Your tone:
 - Professional but conversational — like a senior analyst briefing an executive
 - Concise: lead with the direct answer, then support with detail
-- Never use filler phrases like "Great question!" or "Certainly!"'''
+- Never use filler phrases like "Great question!" or "Certainly!" """
 
 # ── VISUAL REPORT SYSTEM PROMPT ───────────────────────────────────────────────
-VISUAL_PROMPT = '''You are FinSight, an expert financial analyst. The user wants a VISUAL REPORT.
+VISUAL_PROMPT = """You are FinSight, an expert financial analyst. The user wants a VISUAL REPORT.
 
 Your job:
 1. Extract the relevant numbers from the context provided
@@ -89,7 +87,7 @@ Your job:
 {
   "chart_type": "bar",
   "title": "Cloud Revenue Comparison 2024",
-  "explanation": "AWS leads with $90.8B, followed by Azure at $60.2B and Google Cloud at $33.1B. AWS maintains market dominance but Azure shows fastest growth.",
+  "explanation": "AWS leads with $90.8B, followed by Azure at $60.2B and Google Cloud at $33.1B.",
   "data": {
     "labels": ["Amazon AWS", "Microsoft Azure", "Google Cloud"],
     "datasets": [
@@ -105,7 +103,7 @@ Your job:
 Chart type selection rules:
 - Use "bar" for comparing values across companies or categories
 - Use "line" for showing trends over multiple years (e.g., 2022, 2023, 2024)
-- Use "pie" for showing composition/breakdown of a single entity (e.g., Amazon's revenue by segment)
+- Use "pie" for showing composition/breakdown of a single entity
 
 CRITICAL RULES:
 - Return ONLY the JSON. No markdown, no explanation outside the JSON, no backticks.
@@ -113,7 +111,31 @@ CRITICAL RULES:
 - If a value is missing for one company, use 0 and note it in the explanation.
 - If the data is not available in the context at all, return: {"error": "Data not available in the uploaded 10-K filings."}
 - For pie charts, use "labels" for categories and ONE dataset with "values"
-- Always specify the fiscal year in the title when applicable'''
+- Always specify the fiscal year in the title when applicable"""
+
+# ── BUILD PROMPTS AS PLAIN STRINGS ───────────────────────────────────────────
+def build_visual_prompt(context: str, question: str) -> str:
+    return f"""{VISUAL_PROMPT}
+
+Context from 10-K filings:
+{context}
+
+User request: {question}
+
+JSON:"""
+
+def build_qa_prompt(context: str, question: str) -> str:
+    return f"""{SYSTEM_PROMPT}
+
+Use the following excerpts from the 10-K filings to answer the question.
+If this is a follow-up question, use the conversation history below to understand what metric or company is being referenced.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
 
 # ── VISUAL INTENT DETECTION ───────────────────────────────────────────────────
 VISUAL_KEYWORDS = [
@@ -520,9 +542,9 @@ with left_col:
         <p style="color:#f0c040; font-size:0.78rem; font-weight:700; margin:0 0 0.4rem 0;
                   text-transform:uppercase; letter-spacing:0.5px;">📊 Visual Reports</p>
         <p style="color:rgba(255,255,255,0.65); font-size:0.82rem; margin:0; line-height:1.5;">
-            Add <strong style="color:rgba(255,255,255,0.9);">"chart"</strong>, 
-            <strong style="color:rgba(255,255,255,0.9);">"graph"</strong>, or 
-            <strong style="color:rgba(255,255,255,0.9);">"visualize"</strong> to any 
+            Add <strong style="color:rgba(255,255,255,0.9);">"chart"</strong>,
+            <strong style="color:rgba(255,255,255,0.9);">"graph"</strong>, or
+            <strong style="color:rgba(255,255,255,0.9);">"visualize"</strong> to any
             question to get an interactive chart.<br><br>
             e.g. <em style="color:rgba(255,255,255,0.55);">"Bar chart of cloud revenue across all three companies"</em>
         </p>
@@ -678,27 +700,17 @@ with right_col:
             start_time = st.session_state.query_start_time
             visual     = is_visual_request(pending)
 
+            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
+
             if visual:
-                visual_qa_prompt = PromptTemplate(
-                    input_variables=["context", "question"],
-                    template=f"""{VISUAL_PROMPT}
-
-Context from 10-K filings:
-{{context}}
-
-User request: {{question}}
-
-JSON:"""
-                )
-
-                retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
-                docs = retriever.invoke(pending)
+                docs    = retriever.invoke(pending)
                 context = "\n\n".join([d.page_content for d in docs])
-                filled_prompt = visual_qa_prompt.format(context=context, question=pending)
-                
+                prompt  = build_visual_prompt(context, pending)
+
                 with st.spinner("FinSight is building your visual report…"):
                     llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
-                    raw = llm.invoke(filled_prompt).content.strip()
+                    raw = llm.invoke(prompt).content.strip()
+
                 raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
@@ -718,29 +730,13 @@ JSON:"""
                     history_context = f"Previous question: {last_human}\nPrevious answer summary: {last_ai[:300]}\n\nFollow-up: "
                 enriched_query = history_context + pending
 
-                qa_prompt = PromptTemplate(
-                    input_variables=["context", "question"],
-                    template=f"""{SYSTEM_PROMPT}
-
-Use the following excerpts from the 10-K filings to answer the question.
-If this is a follow-up question, use the conversation history below to understand what metric or company is being referenced.
-
-Context:
-{{context}}
-
-Question: {{question}}
-
-Answer:"""
-                )
-
-                retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
-                docs = retriever.invoke(enriched_query)
+                docs    = retriever.invoke(enriched_query)
                 context = "\n\n".join([d.page_content for d in docs])
-                filled_prompt = qa_prompt.format(context=context, question=enriched_query)
-                
+                prompt  = build_qa_prompt(context, enriched_query)
+
                 with st.spinner("FinSight is thinking…"):
                     llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
-                    response_text = llm.invoke(filled_prompt).content.strip()
+                    response_text = llm.invoke(prompt).content.strip()
 
                 st.session_state.chat_history.append((pending, response_text))
                 if len(st.session_state.chat_history) > 6:
