@@ -691,16 +691,14 @@ User request: {{question}}
 JSON:"""
                 )
 
-                visual_chain = RetrievalQA.from_chain_type(
-                    llm=ChatOpenAI(model="gpt-4o", temperature=0.0),
-                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
-                    chain_type_kwargs={"prompt": visual_qa_prompt}
-                )
-
+                retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
+                docs = retriever.invoke(pending)
+                context = "\n\n".join([d.page_content for d in docs])
+                filled_prompt = visual_qa_prompt.format(context=context, question=pending)
+                
                 with st.spinner("FinSight is building your visual report…"):
-                    response = visual_chain.invoke({"query": pending})
-
-                raw = str(response.get("result", "")).strip()
+                    llm = ChatOpenAI(model="gpt-4o", temperature=0.0)
+                    raw = llm.invoke(filled_prompt).content.strip()
                 raw = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"^```\s*",     "", raw, flags=re.MULTILINE)
                 raw = re.sub(r"\s*```$",     "", raw, flags=re.MULTILINE)
@@ -735,16 +733,14 @@ Question: {{question}}
 Answer:"""
                 )
 
-                qa_chain = RetrievalQA.from_chain_type(
-                    llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
-                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
-                    chain_type_kwargs={"prompt": qa_prompt}
-                )
-
+                retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
+                docs = retriever.invoke(enriched_query)
+                context = "\n\n".join([d.page_content for d in docs])
+                filled_prompt = qa_prompt.format(context=context, question=enriched_query)
+                
                 with st.spinner("FinSight is thinking…"):
-                    response = qa_chain.invoke({"query": enriched_query})
-
-                response_text = str(response.get("result", "")).strip()
+                    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+                    response_text = llm.invoke(filled_prompt).content.strip()
 
                 st.session_state.chat_history.append((pending, response_text))
                 if len(st.session_state.chat_history) > 6:
