@@ -746,7 +746,7 @@ Answer:"""
                 )
 
                 with st.spinner("FinSight is thinking…"):
-                    response = qa_chain.invoke({"query": enriched_query})
+                    response = qa_chain.invoke({"question": enriched_query})
 
                 if isinstance(response, dict):
                     response_text = str(response.get("result") or response.get("output") or "").strip()
