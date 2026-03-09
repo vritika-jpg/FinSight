@@ -56,6 +56,7 @@ def init_session_state():
         "charts": {},
         "vector_store": None,
         "files_signature": None,
+        "loaded_companies": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -63,12 +64,73 @@ def init_session_state():
 
 def reset_app_state():
     for key in ["analytics", "uploaded_files", "chunk_count", "confirm_reset",
-                "messages", "chat_history", "charts", "vector_store", "files_signature"]:
+                "messages", "chat_history", "charts", "vector_store",
+                "files_signature", "loaded_companies"]:
         if key in st.session_state:
             del st.session_state[key]
     init_session_state()
 
 init_session_state()
+
+# ── SMART RETRIEVAL ───────────────────────────────────────────────────────────
+COMPANY_KEYWORDS = {
+    "Amazon":           ["amazon", "aws"],
+    "Alphabet (Google)": ["alphabet", "google", "youtube"],
+    "Microsoft":        ["microsoft", "azure", "linkedin"],
+}
+
+ALL_COMPANIES = ["Amazon", "Alphabet (Google)", "Microsoft"]
+
+def is_multi_company_query(query: str) -> bool:
+    """Returns True if the query seems to be asking about multiple/all companies."""
+    q = query.lower()
+    multi_signals = [
+        "all three", "all companies", "compare", "comparison", "versus", "vs",
+        "each company", "which company", "who spent", "who had", "who is",
+        "across companies", "between", "winning", "best", "highest", "lowest",
+        "most", "least", "r&d", "research and development", "risks"
+    ]
+    return any(kw in q for kw in multi_signals)
+
+def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single: int = 15) -> str:
+    """
+    For multi-company queries: retrieve k_per_company chunks per company using
+    metadata filtering, guaranteeing balanced coverage across all three.
+    For single-company or focused queries: fall back to standard top-k retrieval
+    with company names appended to the query for better semantic matching.
+    """
+    loaded_companies = st.session_state.get("loaded_companies", ALL_COMPANIES)
+
+    if is_multi_company_query(query):
+        all_docs = []
+        # Enrich the query with all company names so embeddings pull broadly
+        enriched = f"{query} Amazon Alphabet Google Microsoft"
+        for company in loaded_companies:
+            try:
+                retriever = vector_store.as_retriever(
+                    search_kwargs={"k": k_per_company, "filter": {"company": company}}
+                )
+                docs = retriever.invoke(enriched)
+                all_docs.extend(docs)
+            except Exception:
+                # FAISS filter may fail if company has no docs; fall back gracefully
+                retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
+                docs = retriever.invoke(f"{query} {company}")
+                all_docs.extend(docs)
+        return "\n\n".join([d.page_content for d in all_docs])
+    else:
+        # Single-company or general question — standard retrieval
+        # Detect if a specific company is mentioned and boost the query
+        q_lower = query.lower()
+        boost = ""
+        for company, keywords in COMPANY_KEYWORDS.items():
+            if any(kw in q_lower for kw in keywords):
+                boost = company
+                break
+        enriched = f"{query} {boost}".strip()
+        retriever = vector_store.as_retriever(search_kwargs={"k": k_single})
+        docs = retriever.invoke(enriched)
+        return "\n\n".join([d.page_content for d in docs])
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence.
@@ -559,7 +621,7 @@ with left_col:
             <strong style="color:rgba(255,255,255,0.9);">"graph"</strong>, or
             <strong style="color:rgba(255,255,255,0.9);">"visualize"</strong> to any
             question to get an interactive chart.<br><br>
-            e.g. <em style="color:rgba(255,255,255,0.55);">"Bar chart of revenue across all three companies"</em>
+            e.g. <em style="color:rgba(255,255,255,0.55);">"Bar chart of cloud revenue across all three companies"</em>
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -597,6 +659,8 @@ with right_col:
         progress_bar = st.progress(0)
 
         documents = []
+        detected_companies = set()
+
         with tempfile.TemporaryDirectory() as temp_dir:
             total = len(uploaded_files)
             for i, file in enumerate(uploaded_files):
@@ -611,19 +675,23 @@ with right_col:
                     f.write(file.getbuffer())
                 loader = PyPDFLoader(temp_file_path)
                 raw_docs = loader.load()
-                company = file.name.lower()
-                if "amazon" in company:
+                fname = file.name.lower()
+                if "amazon" in fname:
                     company_name = "Amazon"
-                elif "alphabet" in company or "google" in company:
+                elif "alphabet" in fname or "google" in fname:
                     company_name = "Alphabet (Google)"
-                elif "microsoft" in company:
+                elif "microsoft" in fname:
                     company_name = "Microsoft"
                 else:
                     company_name = file.name
+                detected_companies.add(company_name)
                 for d in raw_docs:
                     d.metadata["company"] = company_name
                     d.metadata["source"] = file.name
                 documents.extend(raw_docs)
+
+        # Store which companies are actually loaded so retrieval filters correctly
+        st.session_state.loaded_companies = list(detected_companies)
 
         status.markdown(
             "<p style='color:rgba(255,255,255,0.7); font-size:0.9rem;'>"
@@ -722,14 +790,11 @@ with right_col:
             visual     = is_visual_request(pending)
             encoding   = tiktoken.encoding_for_model("gpt-4o")
 
-            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 15})
-
             try:
                 if visual:
-                    retrieved_docs = retriever.invoke(pending)
-                    context        = "\n\n".join([d.page_content for d in retrieved_docs])
-                    prompt         = build_visual_prompt(context, pending)
-                    input_tokens   = len(encoding.encode(prompt))
+                    context      = retrieve_context(st.session_state.vector_store, pending)
+                    prompt       = build_visual_prompt(context, pending)
+                    input_tokens = len(encoding.encode(prompt))
 
                     with st.spinner("FinSight is building your visual report…"):
                         raw = get_llm_precise().invoke(prompt).content.strip()
@@ -755,10 +820,9 @@ with right_col:
                         history_context = f"Previous question: {last_human}\nPrevious answer summary: {last_ai[:300]}\n\nFollow-up: "
                     enriched_query = history_context + pending
 
-                    retrieved_docs = retriever.invoke(enriched_query)
-                    context        = "\n\n".join([d.page_content for d in retrieved_docs])
-                    prompt         = build_qa_prompt(context, enriched_query)
-                    input_tokens   = len(encoding.encode(prompt))
+                    context      = retrieve_context(st.session_state.vector_store, enriched_query)
+                    prompt       = build_qa_prompt(context, enriched_query)
+                    input_tokens = len(encoding.encode(prompt))
 
                     with st.spinner("FinSight is thinking…"):
                         response_text = get_llm_creative().invoke(prompt).content.strip()
