@@ -36,6 +36,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 | Temperature | 0.1 (text), 0.0 (visual) |
 
 With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. *The tradeoff was that not all questions got answered.*
+
 ---
 
 ## 🧪 Chunk Size Trial
