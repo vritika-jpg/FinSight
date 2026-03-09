@@ -10,7 +10,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 | Name | Role |
 |------|------|
-| Vritika Narra | Code Owner — app architecture, UI, RAG pipeline, chunk testing |
+| Vritika Narra | Code Owner — architecture, UI, RAG pipeline |
 | Yuying Ding | Hallucination Testing |
 | Megan Huber | Demo + Troubleshooting |
 | Jialu Li | Question Formulation |
