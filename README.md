@@ -2,7 +2,7 @@
 
 An AI-powered chatbot that analyzes 10-K filings for **Alphabet**, **Amazon**, and **Microsoft** using Retrieval-Augmented Generation (RAG) and GPT-4o.
 
-🔗 [Live Demo](https://finsightrag.streamlit.app/)
+🔗 [Live Streamlit Demo](https://finsightrag.streamlit.app/)
 
 ---
 
@@ -10,12 +10,12 @@ An AI-powered chatbot that analyzes 10-K filings for **Alphabet**, **Amazon**, a
 
 | Name | Role |
 |------|------|
-| Vritika Narra | Code Owner — app architecture, UI, RAG pipeline, visual reports |
-| *(Teammate 2)* | Question Designer |
-| *(Teammate 3)* | Hallucination Hunter |
-| *(Teammate 4)* | Chunk Size Experimenter |
-| Fahda | DeepSeek vs GPT-4o Model Comparison |
-| *(Teammate 6)* | README, Tech Note, Presentation |
+| Vritika Narra | Code Owner — app architecture, UI, RAG pipeline, visual reports, chunk size testing |
+| Yuying Ding | UPDATE |
+| Megan Huber | UPDATE |
+| Jialu Li | UPDATE |
+| Fahda Alajmi | DeepSeek vs GPT-4o Model Comparison |
+| Zhiruo Zhao | UPDATE |
 
 ---
 
