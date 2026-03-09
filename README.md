@@ -53,6 +53,14 @@ With the low temperature approach along with giving the RAG a strictly objective
 
 ---
 
+## 🧩 System Architecture
+
+FinSight uses a Retrieval-Augmented Generation pipeline:
+
+10-K PDFs → Text Chunking → OpenAI Ada Embeddings → FAISS Vector Store → LangChain RetrievalQA → GPT-4o → Answer + Source Citation + Plotly Visualization
+
+---
+
 ## 🧪 Chunk Size Trial
 
 Tested with three queries: Amazon revenue, cross-company operating income, and Microsoft risk factors.
@@ -64,14 +72,6 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 | **1500** | Richest cross-company narrative, full context | Risk factors drifted to IP/AI topics vs. core cybersecurity |
 
 **We decided to go with the 1500 chunk size.** Reasoning: 500 chunk size was inconsistent across companies; and 1000 chunk size was still not giving the model the entire context. Anything above 1500 was too noisy. 
-
----
-
-## 🧩 System Architecture
-
-FinSight uses a Retrieval-Augmented Generation pipeline:
-
-10-K PDFs → Text Chunking → OpenAI Ada Embeddings → FAISS Vector Store → LangChain RetrievalQA → GPT-4o → Answer + Source Citation + Plotly Visualization
 
 ---
 
