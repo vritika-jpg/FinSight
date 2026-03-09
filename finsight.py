@@ -34,26 +34,33 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ── SESSION STATE INIT ────────────────────────────────────────────────────────
-if "analytics" not in st.session_state:
-    st.session_state.analytics = {
-        "queries": 0,
-        "total_tokens": 0,
-        "total_cost": 0.0,
-        "avg_response_time": 0.0,
+# ── SESSION STATE INIT (REPLACEMENT) ───────────────────────────────────────────
+def init_session_state():
+    defaults = {
+        "analytics": {"queries": 0, "total_tokens": 0, "total_cost": 0.0, "avg_response_time": 0.0},
+        "uploaded_files": [],
+        "chunk_count": 0,
+        "confirm_reset": False,
+        "messages": [],
+        "chat_history": [],
+        "charts": {},
+        "vector_store": None,
+        "files_signature": None,  # NEW: tracks upload changes
     }
-if "uploaded_files" not in st.session_state:
-    st.session_state.uploaded_files = []
-if "chunk_count" not in st.session_state:
-    st.session_state.chunk_count = 0
-if "confirm_reset" not in st.session_state:
-    st.session_state.confirm_reset = False
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []  # (human, ai) tuples for ConversationalRetrievalChain
-if "charts" not in st.session_state:
-    st.session_state.charts = {}
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+def reset_app_state():
+    # NEW: Safe reset - only deletes our keys
+    for key in ["analytics", "uploaded_files", "chunk_count", "confirm_reset", 
+                "messages", "chat_history", "charts", "vector_store", "files_signature"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    init_session_state()
+
+init_session_state()
+
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = '''You are FinSight, an expert financial analyst specializing in Big Tech competitive intelligence. 
@@ -681,7 +688,10 @@ JSON:"""
                 )
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.0),
-                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 12}),
+                    retriever=st.session_state.vector_store.as_retriever(
+                        search_type="similarity_score_threshold",
+                        search_kwargs={"k": 12, "score_threshold": 0.2}
+                ),
                     chain_type="stuff",
                     chain_type_kwargs={"prompt": visual_qa_prompt}
                 )
@@ -729,7 +739,10 @@ Answer:"""
                 )
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
-                    retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 6}),
+                    retriever=st.session_state.vector_store.as_retriever(
+                        search_type="similarity_score_threshold",
+                        search_kwargs={"k": 8, "score_threshold": 0.3}
+),
                     chain_type="stuff",
                     chain_type_kwargs={"prompt": qa_prompt}
                 )
