@@ -10,11 +10,11 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 | Name | Role |
 |------|------|
-| Vritika Narra | Code Owner — app architecture, UI, RAG pipeline, visual reports, chunk size testing |
-| Yuying Ding | UPDATE |
-| Megan Huber | UPDATE |
-| Jialu Li | UPDATE |
-| Fahda Alajmi | DeepSeek vs GPT-4o Model Comparison |
+| Vritika Narra | Code Owner — app architecture, UI, RAG pipeline, chunk testing |
+| Yuying Ding | Hallucination Testing |
+| Megan Huber | Demo + Troubleshooting |
+| Jialu Li | Question Formulation |
+| Fahda Alajmi | DeepSeek vs GPT-4o vs Gemini Model Comparison |
 | Zhiruo Zhao | UPDATE |
 
 ---
@@ -29,9 +29,9 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 | Parameter | Value |
 |-----------|-------|
-| Chunk Size | 1000 tokens |
-| Chunk Overlap | 100 tokens |
-| Top-K (text queries) | 4 |
+| Chunk Size | 1500 tokens |
+| Chunk Overlap | 200 tokens |
+| Top-K (text queries) | 8 |
 | Top-K (visual queries) | 12 |
 | Temperature | 0.1 (text), 0.0 (visual) |
 
@@ -49,7 +49,7 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 | **1000** | Consistent results across all three companies | Alphabet total missing; got segment deltas instead |
 | 1500 | Richest cross-company narrative | Risk factors drifted to IP/AI topics vs. core cybersecurity |
 
-**We decided to go with the 1000 chunk size.** Reasoning: 500 chunk size was inconsistent across companies; and 1500 chunk size was too noisy for straightforward (and factual) queries.
+**We decided to go with the 1500 chunk size.** Reasoning: 500 chunk size was inconsistent across companies; and 1000 chunk size was still not giving the model the entire context. Anything above 1500 was too noisy. 
 
 ---
 
