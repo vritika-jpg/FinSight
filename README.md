@@ -53,12 +53,12 @@ With the low temperature approach along with giving the RAG a strictly objective
 
 ---
 
-## 🧪 Model and Embedding Evaluation
+## Model and Embedding Comparison
 
-To determine the most reliable architecture for financial document analysis, we evaluated both large language models and embedding approaches used within the Retrieval-Augmented Generation (RAG) pipeline.
+To determine the most reliable architecture for financial document analysis, we evaluated both large language models and embedding approaches used within the RAG pipeline.
 
 <details>
-<summary><strong>🤖 LLM Evaluation (Qualitative)</strong></summary>
+<summary><strong>⚖️ LLM Evaluation (Qualitative)</strong></summary>
 
 We evaluated several language models for financial document question answering. The comparison focused on reliability when interpreting long-form regulatory filings such as 10-K reports.
 
