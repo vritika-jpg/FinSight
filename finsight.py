@@ -49,6 +49,8 @@ if "confirm_reset" not in st.session_state:
     st.session_state.confirm_reset = False
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []  # list of (human, ai) tuples for ConversationalRetrievalChain
 if "charts" not in st.session_state:
     st.session_state.charts = {}
 
@@ -145,10 +147,8 @@ def render_chart(chart_data: dict):
     if chart_type == "pie":
         values = datasets[0]["values"] if datasets else []
         fig = go.Figure(go.Pie(
-            labels=labels,
-            values=values,
-            marker=dict(colors=COLORS[:len(labels)],
-                        line=dict(color="rgba(17,45,31,1)", width=2)),
+            labels=labels, values=values,
+            marker=dict(colors=COLORS[:len(labels)], line=dict(color="rgba(17,45,31,1)", width=2)),
             textfont=dict(color="white"),
             hovertemplate="%{label}: %{value} " + unit + "<extra></extra>",
         ))
@@ -166,13 +166,12 @@ def render_chart(chart_data: dict):
             ))
         fig.update_layout(**layout)
 
-    else:  # bar (default)
+    else:
         fig = go.Figure()
         for i, ds in enumerate(datasets):
             fig.add_trace(go.Bar(
                 x=labels, y=ds["values"], name=ds["name"],
-                marker=dict(color=COLORS[i % len(COLORS)],
-                            line=dict(color="rgba(255,255,255,0.1)", width=1)),
+                marker=dict(color=COLORS[i % len(COLORS)], line=dict(color="rgba(255,255,255,0.1)", width=1)),
                 hovertemplate="%{x}: %{y} " + unit + "<extra>" + ds["name"] + "</extra>",
             ))
         if len(datasets) > 1:
@@ -263,16 +262,8 @@ st.markdown("""
         max-width: 75%;
         margin: 0.2rem 0;
     }
-    .message-wrapper.user {
-        margin-left: auto;
-        margin-right: 0;
-        align-items: flex-end;
-    }
-    .message-wrapper.assistant {
-        margin-right: auto;
-        margin-left: 0;
-        align-items: flex-start;
-    }
+    .message-wrapper.user { margin-left: auto; margin-right: 0; align-items: flex-end; }
+    .message-wrapper.assistant { margin-right: auto; margin-left: 0; align-items: flex-start; }
 
     .message-bubble {
         padding: 0.7rem 1rem;
@@ -381,10 +372,7 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.1) !important;
         border-radius: 14px !important;
     }
-    [data-testid="stExpander"] summary {
-        color: rgba(255,255,255,0.85) !important;
-        font-weight: 500 !important;
-    }
+    [data-testid="stExpander"] summary { color: rgba(255,255,255,0.85) !important; font-weight: 500 !important; }
 
     hr { border-color: rgba(255,255,255,0.1) !important; margin: 1.5rem 0 !important; }
 
@@ -424,10 +412,8 @@ st.markdown("""
     }
 
     [data-testid="stChatMessage"] {
-        padding: 0 !important;
-        margin: 0 !important;
-        background: transparent !important;
-        border: none !important;
+        padding: 0 !important; margin: 0 !important;
+        background: transparent !important; border: none !important;
     }
     [data-testid="stChatMessageAvatar"] { display: none !important; }
 </style>
@@ -521,6 +507,7 @@ with left_col:
     """, unsafe_allow_html=True)
 
 with right_col:
+    st.markdown('<p class="section-title">💬 Ask me your finance-related questions!</p>', unsafe_allow_html=True)
 
     if st.session_state.get("messages"):
         chat_export = "\n\n".join([
@@ -566,7 +553,7 @@ with right_col:
         )
         progress_bar.progress(80)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
         docs = text_splitter.split_documents(documents)
         st.session_state.chunk_count = len(docs)
 
@@ -574,6 +561,7 @@ with right_col:
         embeddings = OpenAIEmbeddings()
         st.session_state.vector_store = FAISS.from_documents(docs, embeddings)
         st.session_state.messages = []
+        st.session_state.chat_history = []
         st.session_state.charts = {}
 
         progress_bar.progress(100)
@@ -600,9 +588,9 @@ with right_col:
             messages_html = (
                 "<p style='color:rgba(255,255,255,0.35); text-align:center; "
                 "margin-top:160px; font-size:0.92rem; line-height:1.6;'>"
-                "✅ <strong>FinSight is ready!</strong><br/>"
+                "✨ <strong>FinSight is ready!</strong><br/>"
                 "Ask about revenue trends, risk factors, or segment performance.<br/>"
-                'Add <strong>"chart"</strong> or <strong>"graph"</strong> to get a visual report!</p>'
+                "Add <strong>\"chart\"</strong> or <strong>\"graph\"</strong> to get a visual report!</p>"
             )
         else:
             for message in st.session_state.messages[-20:]:
@@ -634,6 +622,7 @@ with right_col:
 
         user_input = st.chat_input("Ask anything — or say 'show me a chart of...' for visuals!")
 
+        # PHASE 1: save message and rerun to show it immediately
         if user_input:
             current_time = datetime.datetime.now().strftime("%I:%M %p")
             st.session_state.messages.append({
@@ -645,12 +634,15 @@ with right_col:
             st.session_state.query_start_time = time.time()
             st.rerun()
 
+        # PHASE 2: process the pending query
         if st.session_state.get("pending_query"):
             pending    = st.session_state.pending_query
             start_time = st.session_state.query_start_time
             visual     = is_visual_request(pending)
 
             if visual:
+                # Visual path — still uses RetrievalQA (no history needed for charts)
+                from langchain_classic.chains import RetrievalQA
                 visual_qa_prompt = PromptTemplate(
                     input_variables=["context", "question"],
                     template=f"""{VISUAL_PROMPT}
@@ -689,32 +681,40 @@ JSON:"""
                     response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
 
             else:
-                qa_prompt = PromptTemplate(
-                    input_variables=["context", "question"],
-                    template=f"""{SYSTEM_PROMPT}
-
-Use the following excerpts from the 10-K filings to answer the question.
-
-Context:
-{{context}}
-
-Question: {{question}}
-
-Answer:"""
+                # ── CONVERSATIONAL PATH ───────────────────────────────────────
+                # Build a system + human chat prompt for ConversationalRetrievalChain
+                system_message_prompt = SystemMessagePromptTemplate.from_template(
+                    SYSTEM_PROMPT + "\n\nUse the following context from the 10-K filings to answer:\n{context}"
                 )
-                qa_chain = RetrievalQA.from_chain_type(
+                human_message_prompt = HumanMessagePromptTemplate.from_template("{question}")
+                chat_prompt = ChatPromptTemplate.from_messages([
+                    system_message_prompt,
+                    human_message_prompt
+                ])
+
+                conv_chain = ConversationalRetrievalChain.from_llm(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 4}),
-                    chain_type="stuff",
-                    chain_type_kwargs={"prompt": qa_prompt}
+                    combine_docs_chain_kwargs={"prompt": chat_prompt},
+                    return_source_documents=False,
+                    verbose=False,
                 )
+
                 with st.spinner("FinSight is thinking…"):
-                    response = qa_chain.invoke({"query": pending})
+                    response = conv_chain.invoke({
+                        "question": pending,
+                        "chat_history": st.session_state.chat_history  # pass full history
+                    })
 
                 if isinstance(response, dict):
-                    response_text = str(response.get("result") or response.get("output") or "").strip()
+                    response_text = str(response.get("answer") or response.get("result") or response.get("output") or "").strip()
                 else:
                     response_text = str(response).strip()
+
+                # Append to chat history for next turn (keep last 6 turns = 12 messages)
+                st.session_state.chat_history.append((pending, response_text))
+                if len(st.session_state.chat_history) > 6:
+                    st.session_state.chat_history = st.session_state.chat_history[-6:]
 
             response_time = datetime.datetime.now().strftime("%I:%M %p")
             elapsed_time  = time.time() - start_time
@@ -765,10 +765,7 @@ if st.session_state.get("charts"):
                 "displaylogo": False,
             })
             if explanation:
-                st.markdown(
-                    f'<div class="chart-explanation">💡 {explanation}</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div class="chart-explanation">💡 {explanation}</div>', unsafe_allow_html=True)
             st.markdown("<hr style='border-color:rgba(255,255,255,0.06); margin: 0.5rem 0 1.5rem 0;'>", unsafe_allow_html=True)
         elif "error" in chart_info:
             st.warning(chart_info["error"])
