@@ -806,6 +806,6 @@ with st.expander("📊 Detailed Analytics", expanded=False):
 # ── FOOTER ─────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    "<p class='footer'>FinSight &nbsp;•&nbsp; Vritika Narra</p>",
+    "<p class='footer'>FinSight &nbsp;•&nbsp; Vritika Narra •&nbsp; Megan Huber •&nbsp; Fahda Alajmi •&nbsp; Yuying Ding •&nbsp; Jialu Li •&nbsp; Zhiruo Zhao</p>",
     unsafe_allow_html=True
 )
