@@ -45,14 +45,13 @@ def init_session_state():
         "chat_history": [],
         "charts": {},
         "vector_store": None,
-        "files_signature": None,  # NEW: tracks upload changes
+        "files_signature": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 def reset_app_state():
-    # NEW: Safe reset - only deletes our keys
     for key in ["analytics", "uploaded_files", "chunk_count", "confirm_reset", 
                 "messages", "chat_history", "charts", "vector_store", "files_signature"]:
         if key in st.session_state:
@@ -194,7 +193,7 @@ def render_chart(chart_data: dict):
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans  :wght@300;400;500;600&display=swap');
 
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     .stApp { background: #112d1f; min-height: 100vh; }
@@ -506,8 +505,7 @@ with left_col:
         confirm_col, cancel_col = st.columns(2)
         with confirm_col:
             if st.button("✅ Yes, reset", use_container_width=True):
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
+                reset_app_state()
                 st.rerun()
         with cancel_col:
             if st.button("❌ Cancel", use_container_width=True):
@@ -549,7 +547,7 @@ with right_col:
     st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
 
     # ── DOCUMENT PROCESSING ───────────────────────────────────────────────────
-    if uploaded_files and "vector_store" not in st.session_state:
+    if uploaded_files and st.session_state.get("vector_store") is None:
         status = st.empty()
         progress_bar = st.progress(0)
 
@@ -609,7 +607,7 @@ with right_col:
         st.rerun()
 
     # ── CHAT AREA ─────────────────────────────────────────────────────────────
-    if "vector_store" not in st.session_state:
+    if st.session_state.get("vector_store") is None:
         st.markdown("""
         <div class="upload-placeholder">
             <span class="icon">📂</span>
@@ -659,6 +657,11 @@ with right_col:
         user_input = st.chat_input("Ask anything — or say 'show me a chart of...' for visuals!")
 
         if user_input:
+            # Safety check: ensure vector_store is ready before processing
+            if st.session_state.get("vector_store") is None:
+                st.error("⚠️ Vector store not initialized. Please upload documents first.")
+                st.stop()
+            
             current_time = datetime.datetime.now().strftime("%I:%M %p")
             st.session_state.messages.append({
                 "role": "user",
@@ -735,7 +738,6 @@ Answer:"""
                 qa_chain = RetrievalQA.from_chain_type(
                     llm=ChatOpenAI(model="gpt-4o", temperature=0.1),
                     retriever=st.session_state.vector_store.as_retriever(search_kwargs={"k": 8}),
-                    
                 )
 
                 with st.spinner("FinSight is thinking…"):
