@@ -722,7 +722,7 @@ with right_col:
             visual     = is_visual_request(pending)
             encoding   = tiktoken.encoding_for_model("gpt-4o")
 
-            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 8})
+            retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 15})
 
             try:
                 if visual:
