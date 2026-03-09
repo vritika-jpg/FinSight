@@ -34,7 +34,8 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 | Top-K (text queries) | 4 |
 | Top-K (visual queries) | 12 |
 | Temperature | 0.1 (text), 0.0 (visual) |
-With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. **The tradeoff was that not all questions got answered.**
+
+With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. *The tradeoff was that not all questions got answered.*
 ---
 
 ## 🧪 Chunk Size Trial
