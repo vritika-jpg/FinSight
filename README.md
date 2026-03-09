@@ -107,7 +107,7 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 
 | Chunk Size | Strength | Weakness |
 |------------|----------|----------|
-| 500 | Got Alphabet's exact total ($112.4B) | Lost Microsoft's total entirely |
+|  500 | Got Alphabet's exact total ($112.4B) | Lost Microsoft's total entirely |
 | 1000 | Consistent results across all three companies | Alphabet total missing; got segment deltas instead |
 | **1500** | Richest cross-company narrative, full context | Risk factors drifted to IP/AI topics vs. core cybersecurity |
 
