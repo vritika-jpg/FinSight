@@ -23,7 +23,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 **Model:** GPT-4o with a custom financial analyst system prompt that enforces source citation, fiscal year attribution, and no outside knowledge.
 
-**Architecture:** Custom RAG pipeline with manual retrieval → FAISS vector store → OpenAI text-embedding-3-small embeddings → GPT-4o
+**Architecture:** Custom RAG pipeline with retrieval logic → FAISS vector store → OpenAI text-embedding-3-small embeddings → GPT-4o
 
 **RAG Settings:**
 
@@ -39,6 +39,14 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 **Note: Two GPT-4o instances are used: a deterministic model (temperature 0.0) for visual JSON generation and a low-temperature model (0.1) for natural language answers.*
 
 With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. 
+
+
+### Retrieval Strategy
+
+FinSight uses a lightweight query classifier to determine whether a user question is about a single company or requires cross-company comparison.
+
+- **Single-company queries** retrieve the top **15 most relevant chunks** from the FAISS vector store.
+- **Multi-company queries** (e.g., “compare”, “vs”, “which company”, “between”, “all three”) trigger **balanced retrieval**, where the system retrieves **5 chunks per company** to ensure that each firm's filing contributes context.
 
 ---
 
@@ -100,7 +108,7 @@ text-embedding-3-small provided the most consistent retrieval quality when searc
 
 FinSight uses a Retrieval-Augmented Generation pipeline:
 
-10-K PDFs → Text Chunking (1500 tokens, 200 overlap) → OpenAI text-embedding-3-small → FAISS Vector Store → Manual Retrieval (k=15 single / k=5×n multi-company) → Custom Prompt Construction → GPT-4o → Answer + Source Citation + Plotly Visualization
+10-K PDFs → Text Chunking (1500 tokens, 200 overlap) → OpenAI text-embedding-3-small → FAISS Vector Store → Custom Retrieval (k=15 single / k=5×n multi-company) → Custom Prompt Construction → GPT-4o → Answer + Source Citation + Plotly Visualization
 
 ---
 
