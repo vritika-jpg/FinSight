@@ -88,7 +88,8 @@ def is_multi_company_query(query: str) -> bool:
         "all three", "all companies", "compare", "comparison", "versus", "vs",
         "each company", "which company", "who spent", "who had", "who is",
         "across companies", "between", "winning", "best", "highest", "lowest",
-        "most", "least", "r&d", "research and development", "risks"
+        "most", "least", "r&d", "research and development", "risks",
+        "similar risks", "other companies", "both companies", "all of them"
     ]
     return any(kw in q for kw in multi_signals)
 
@@ -98,13 +99,15 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
     metadata filtering, guaranteeing balanced coverage across all three.
     For single-company or focused queries: fall back to standard top-k retrieval
     with company names appended to the query for better semantic matching.
+    Always appends 'fiscal year 2024' to anchor retrieval to the correct year.
     """
     loaded_companies = st.session_state.get("loaded_companies", ALL_COMPANIES)
+    # Anchor to fiscal year 2024 to avoid the model picking up older figures
+    year_anchor = "fiscal year 2024"
 
     if is_multi_company_query(query):
         all_docs = []
-        # Enrich the query with all company names so embeddings pull broadly
-        enriched = f"{query} Amazon Alphabet Google Microsoft"
+        enriched = f"{query} Amazon Alphabet Google Microsoft {year_anchor}"
         for company in loaded_companies:
             try:
                 retriever = vector_store.as_retriever(
@@ -113,21 +116,18 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
                 docs = retriever.invoke(enriched)
                 all_docs.extend(docs)
             except Exception:
-                # FAISS filter may fail if company has no docs; fall back gracefully
                 retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
-                docs = retriever.invoke(f"{query} {company}")
+                docs = retriever.invoke(f"{query} {company} {year_anchor}")
                 all_docs.extend(docs)
         return "\n\n".join([d.page_content for d in all_docs])
     else:
-        # Single-company or general question — standard retrieval
-        # Detect if a specific company is mentioned and boost the query
         q_lower = query.lower()
         boost = ""
         for company, keywords in COMPANY_KEYWORDS.items():
             if any(kw in q_lower for kw in keywords):
                 boost = company
                 break
-        enriched = f"{query} {boost}".strip()
+        enriched = f"{query} {boost} {year_anchor}".strip()
         retriever = vector_store.as_retriever(search_kwargs={"k": k_single})
         docs = retriever.invoke(enriched)
         return "\n\n".join([d.page_content for d in docs])
@@ -830,8 +830,8 @@ with right_col:
                     output_tokens = len(encoding.encode(response_text))
 
                     st.session_state.chat_history.append((pending, response_text))
-                    if len(st.session_state.chat_history) > 6:
-                        st.session_state.chat_history = st.session_state.chat_history[-6:]
+                    if len(st.session_state.chat_history) > 3:
+                        st.session_state.chat_history = st.session_state.chat_history[-3:]
 
             except Exception as e:
                 response_text = f"⚠️ Something went wrong while contacting the AI. Please try again.\n\nDetails: {str(e)}"
