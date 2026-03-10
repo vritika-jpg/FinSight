@@ -36,7 +36,9 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 | Temperature (text queries) | 0.1 |
 | Temperature (visual queries) | 0.0 |
 
-With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. *The tradeoff was that not all questions got answered.*
+**Note: Two GPT-4o instances are used: a deterministic model (temperature 0.0) for visual JSON generation and a low-temperature model (0.1) for natural language answers.*
+
+With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. 
 
 ---
 
