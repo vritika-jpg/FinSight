@@ -133,7 +133,7 @@ The LLM extracts the relevant figures, selects the appropriate chart type, and g
 
 ---
 
-## Conversational Context
+## Conversational Context Abilities
 
 FinSight supports short follow-up questions by including the previous Q&A pair in the prompt. The system keeps the last 3 exchanges to maintain conversational continuity while limiting prompt size.
 
