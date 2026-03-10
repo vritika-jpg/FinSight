@@ -98,27 +98,33 @@ def is_multi_company_query(query: str) -> bool:
 
 def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single: int = 15) -> str:
     """
-    For multi-company queries: retrieve k_per_company chunks per company using
-    metadata filtering, guaranteeing balanced coverage across all three.
-    For single-company or focused queries: fall back to standard top-k retrieval
-    with company names appended to the query for better semantic matching.
+    For multi-company queries: run one search per company by appending the
+    company name directly to the query. This avoids FAISS metadata filtering
+    which silently fails in some versions, and guarantees balanced coverage.
+    For single-company queries: standard top-k search with company name boost.
     """
     loaded_companies = st.session_state.get("loaded_companies", ALL_COMPANIES)
 
+    # Map internal company names to the search terms most likely to appear in their chunks
+    COMPANY_SEARCH_TERMS = {
+        "Amazon":            "Amazon AWS net sales revenue",
+        "Alphabet (Google)": "Alphabet Google revenue income",
+        "Microsoft":         "Microsoft revenue income Azure",
+    }
+
     if is_multi_company_query(query):
         all_docs = []
-        enriched = f"{query} Amazon Alphabet Google Microsoft"
+        retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
         for company in loaded_companies:
-            try:
-                retriever = vector_store.as_retriever(
-                    search_kwargs={"k": k_per_company, "filter": {"company": company}}
-                )
-                docs = retriever.invoke(enriched)
-                all_docs.extend(docs)
-            except Exception:
-                retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
-                docs = retriever.invoke(f"{query} {company}")
-                all_docs.extend(docs)
+            search_terms = COMPANY_SEARCH_TERMS.get(company, company)
+            company_query = f"{query} {search_terms}"
+            docs = retriever.invoke(company_query)
+            # Post-filter: only keep chunks that actually belong to this company
+            company_docs = [d for d in docs if d.metadata.get("company") == company]
+            # If post-filter killed everything (metadata not set), keep all docs
+            if not company_docs:
+                company_docs = docs
+            all_docs.extend(company_docs)
         return "\n\n".join([d.page_content for d in all_docs])
     else:
         q_lower = query.lower()
