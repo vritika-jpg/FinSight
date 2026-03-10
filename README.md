@@ -23,7 +23,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 **Model:** GPT-4o with a custom financial analyst system prompt that enforces source citation, fiscal year attribution, and no outside knowledge.
 
-**Architecture:** Custom RAG pipeline with manual retrieval → FAISS vector store → OpenAI Ada-002 embeddings → GPT-4o
+**Architecture:** Custom RAG pipeline with manual retrieval → FAISS vector store → OpenAI text-embedding-3-small embeddings → GPT-4o
 
 **RAG Settings:**
 
@@ -31,7 +31,8 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 |-----------|-------|
 | Chunk Size | 1500 tokens |
 | Chunk Overlap | 200 tokens |
-| Top-K (retrieval) | 15 |
+| Top-K (single-company retrieval) | 15 |
+| Top-K (multi-company retrieval) | 5 per company (up to 15 total) |
 | Temperature (text queries) | 0.1 |
 | Temperature (visual queries) | 0.0 |
 
@@ -46,7 +47,7 @@ With the low temperature approach along with giving the RAG a strictly objective
 | UI                      | Streamlit      |
 | RAG Framework           | LangChain (for document loading/splitting only) |
 | Vector Database         | FAISS          |
-| Embeddings              | OpenAI Ada-002 |
+| Embeddings              | OpenAI text-embedding-3-small |
 | LLM                     | GPT-4o         |
 | Visualization           | Plotly         |
 | Local Model Experiments | Ollama         |
@@ -81,13 +82,13 @@ Several embedding approaches were considered for indexing financial documents in
 
 | Embedding Model | Strengths | Weaknesses | Observations |
 |------|------|------|------|
-| **OpenAI Ada-002** | Strong semantic similarity performance, stable across long financial passages, widely supported in LangChain | Slightly higher API cost than local embeddings | Produced the most consistent retrieval results when querying financial filings. |
+| **OpenAI text-embedding-3-small** | Strong semantic similarity performance, stable across long financial passages, widely supported in LangChain | Slightly higher API cost than local embeddings | Produced the most consistent retrieval results when querying financial filings. |
 | **SentenceTransformers (MiniLM)** | Fast and lightweight, can run locally | Lower retrieval precision on financial language | Good for experimentation but occasionally retrieved loosely related passages. |
-| **Instructor Embeddings** | Designed for task-specific embedding generation | More complex setup | Showed promise but did not significantly outperform Ada-002 in our experiments. |
+| **Instructor Embeddings** | Designed for task-specific embedding generation | More complex setup | Showed promise but did not significantly outperform text-embedding-3-small in our experiments. |
 
-**Final Embedding Choice:** OpenAI Ada-002  
+**Final Embedding Choice:** OpenAI text-embedding-3-small  
 
-Ada-002 provided the most consistent retrieval quality when searching across multiple companies' 10-K filings, making it the best fit for the FAISS vector store used in this project.
+text-embedding-3-small provided the most consistent retrieval quality when searching across multiple companies' 10-K filings, making it the best fit for the FAISS vector store used in this project.
 
 </details>
 
@@ -97,7 +98,7 @@ Ada-002 provided the most consistent retrieval quality when searching across mul
 
 FinSight uses a Retrieval-Augmented Generation pipeline:
 
-10-K PDFs → Text Chunking (1500 tokens, 200 overlap) → OpenAI Ada Embeddings → FAISS Vector Store → Manual Retrieval (k=15) → Custom Prompt Construction → GPT-4o → Answer + Source Citation + Plotly Visualization
+10-K PDFs → Text Chunking (1500 tokens, 200 overlap) → OpenAI text-embedding-3-small → FAISS Vector Store → Manual Retrieval (k=15 single / k=5×n multi-company) → Custom Prompt Construction → GPT-4o → Answer + Source Citation + Plotly Visualization
 
 ---
 
