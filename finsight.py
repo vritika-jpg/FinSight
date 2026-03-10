@@ -15,7 +15,10 @@ import tiktoken
 import datetime
 
 # ── API KEY ───────────────────────────────────────────────────────────────────
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+try:
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+except:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not OPENAI_API_KEY:
     st.error("❌ OPENAI_API_KEY is not set. Add it to Streamlit secrets or your environment.")
@@ -99,15 +102,12 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
     metadata filtering, guaranteeing balanced coverage across all three.
     For single-company or focused queries: fall back to standard top-k retrieval
     with company names appended to the query for better semantic matching.
-    Always appends 'fiscal year 2024' to anchor retrieval to the correct year.
     """
     loaded_companies = st.session_state.get("loaded_companies", ALL_COMPANIES)
-    # Anchor to fiscal year 2024 to avoid the model picking up older figures
-    year_anchor = "fiscal year 2024"
 
     if is_multi_company_query(query):
         all_docs = []
-        enriched = f"{query} Amazon Alphabet Google Microsoft {year_anchor}"
+        enriched = f"{query} Amazon Alphabet Google Microsoft"
         for company in loaded_companies:
             try:
                 retriever = vector_store.as_retriever(
@@ -117,7 +117,7 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
                 all_docs.extend(docs)
             except Exception:
                 retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
-                docs = retriever.invoke(f"{query} {company} {year_anchor}")
+                docs = retriever.invoke(f"{query} {company}")
                 all_docs.extend(docs)
         return "\n\n".join([d.page_content for d in all_docs])
     else:
@@ -127,7 +127,7 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
             if any(kw in q_lower for kw in keywords):
                 boost = company
                 break
-        enriched = f"{query} {boost} {year_anchor}".strip()
+        enriched = f"{query} {boost}".strip()
         retriever = vector_store.as_retriever(search_kwargs={"k": k_single})
         docs = retriever.invoke(enriched)
         return "\n\n".join([d.page_content for d in docs])
@@ -139,6 +139,7 @@ You have deep expertise in analyzing 10-K filings for Alphabet (Google), Amazon,
 Your behavior:
 - Always specify WHICH company and WHICH document section your answer comes from
 - When citing numbers, always include the fiscal year (e.g. "Amazon's 2024 10-K states...")
+- Always prioritize the most recent fiscal year figures available in the document (2024). If multiple years appear in the context, use the 2024 figures unless the question specifically asks about a different year.
 - If a question asks you to compare companies, structure your answer company by company
 - If the answer is not found in the provided documents, say clearly:
   "This information is not available in the uploaded 10-K filings."
