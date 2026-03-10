@@ -77,15 +77,14 @@ init_session_state()
 
 # ── SMART RETRIEVAL ───────────────────────────────────────────────────────────
 COMPANY_KEYWORDS = {
-    "Amazon":           ["amazon", "aws"],
+    "Amazon":            ["amazon", "aws"],
     "Alphabet (Google)": ["alphabet", "google", "youtube"],
-    "Microsoft":        ["microsoft", "azure", "linkedin"],
+    "Microsoft":         ["microsoft", "azure", "linkedin"],
 }
 
 ALL_COMPANIES = ["Amazon", "Alphabet (Google)", "Microsoft"]
 
 def is_multi_company_query(query: str) -> bool:
-    """Returns True if the query seems to be asking about multiple/all companies."""
     q = query.lower()
     multi_signals = [
         "all three", "all companies", "compare", "comparison", "versus", "vs",
@@ -97,34 +96,22 @@ def is_multi_company_query(query: str) -> bool:
     return any(kw in q for kw in multi_signals)
 
 def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single: int = 15) -> str:
-    """
-    For multi-company queries: run one search per company by appending the
-    company name directly to the query. This avoids FAISS metadata filtering
-    which silently fails in some versions, and guarantees balanced coverage.
-    For single-company queries: standard top-k search with company name boost.
-    """
     loaded_companies = st.session_state.get("loaded_companies", ALL_COMPANIES)
-
-    # Map internal company names to the search terms most likely to appear in their chunks
-    COMPANY_SEARCH_TERMS = {
-        "Amazon":            "Amazon AWS net sales revenue",
-        "Alphabet (Google)": "Alphabet Google revenue income",
-        "Microsoft":         "Microsoft revenue income Azure",
-    }
 
     if is_multi_company_query(query):
         all_docs = []
-        retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
+        enriched = f"{query} Amazon Alphabet Google Microsoft"
         for company in loaded_companies:
-            search_terms = COMPANY_SEARCH_TERMS.get(company, company)
-            company_query = f"{query} {search_terms}"
-            docs = retriever.invoke(company_query)
-            # Post-filter: only keep chunks that actually belong to this company
-            company_docs = [d for d in docs if d.metadata.get("company") == company]
-            # If post-filter killed everything (metadata not set), keep all docs
-            if not company_docs:
-                company_docs = docs
-            all_docs.extend(company_docs)
+            try:
+                retriever = vector_store.as_retriever(
+                    search_kwargs={"k": k_per_company, "filter": {"company": company}}
+                )
+                docs = retriever.invoke(enriched)
+                all_docs.extend(docs)
+            except Exception:
+                retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
+                docs = retriever.invoke(f"{query} {company}")
+                all_docs.extend(docs)
         return "\n\n".join([d.page_content for d in all_docs])
     else:
         q_lower = query.lower()
@@ -280,7 +267,7 @@ def render_chart(chart_data: dict):
             ))
         fig.update_layout(**layout)
 
-    else:  # bar (default)
+    else:
         fig = go.Figure()
         for i, ds in enumerate(datasets):
             fig.add_trace(go.Bar(
@@ -697,7 +684,6 @@ with right_col:
                     d.metadata["source"] = file.name
                 documents.extend(raw_docs)
 
-        # Store which companies are actually loaded so retrieval filters correctly
         st.session_state.loaded_companies = list(detected_companies)
 
         status.markdown(
@@ -818,7 +804,7 @@ with right_col:
                         msg_idx = len(st.session_state.messages)
                         st.session_state.charts[msg_idx] = chart_data
                     except json.JSONDecodeError:
-                        response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of total revenue for Amazon, Google, and Microsoft in 2024'."
+                        response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of revenue across all three companies'."
 
                 else:
                     history_context = ""
