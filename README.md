@@ -40,6 +40,7 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. 
 
+--
 
 ### Retrieval Strategy
 
