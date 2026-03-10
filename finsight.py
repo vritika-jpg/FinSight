@@ -881,7 +881,7 @@ with right_col:
                         f'<div class="chart-container"><p class="chart-label">📊 {chart_title}</p></div>',
                         unsafe_allow_html=True
                     )
-                    st.plotly_chart(fig, use_container_width=True, config={
+                    st.plotly_chart(fig, use_container_width=True, key=f"chart_{msg_idx}", config={
                         "displayModeBar": True,
                         "modeBarButtonsToRemove": ["lasso2d", "select2d"],
                         "displaylogo": False,
