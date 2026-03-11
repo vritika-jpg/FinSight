@@ -298,8 +298,7 @@ Answer:"""
 VISUAL_KEYWORDS = [
     "chart", "graph", "plot", "visualize", "visualise", "visual",
     "show me a", "draw", "diagram", "compare visually", "visual report",
-    "bar chart", "pie chart", "line chart", "line graph", "bar graph",
-    "growth", "over time"
+    "bar chart", "pie chart", "line chart", "line graph", "bar graph", "over time"
 ]
 
 def is_visual_request(query: str) -> bool:
