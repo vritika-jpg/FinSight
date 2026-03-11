@@ -4,7 +4,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import json
 import re
 import streamlit as st
-from langchain_community.document_loaders import PyPDFLoader
+import pdfplumber
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
@@ -13,6 +14,55 @@ import tempfile
 import time
 import tiktoken
 import datetime
+
+# ── PDF LOADER WITH TABLE SUPPORT ────────────────────────────────────────────
+def load_pdf_with_tables(file_path: str) -> list[Document]:
+    """Extract text and tables from PDF using pdfplumber.
+    Text and tables are returned as SEPARATE Documents so tables are never split
+    during chunking. Tables are tagged with content_type='table' in metadata."""
+    docs = []
+    with pdfplumber.open(file_path) as pdf:
+        for page_num, page in enumerate(pdf.pages, start=1):
+            tables_on_page = page.find_tables()
+
+            # ── plain text (table regions excluded to avoid duplication) ──
+            if tables_on_page:
+                non_table_page = page
+                for table_obj in tables_on_page:
+                    bbox = table_obj.bbox
+                    non_table_page = non_table_page.filter(
+                        lambda obj, b=bbox: not (
+                            b[0] <= obj.get("x0", 0) <= b[2] and
+                            b[1] <= obj.get("top", 0) <= b[3]
+                        )
+                    )
+                plain_text = non_table_page.extract_text() or ""
+            else:
+                plain_text = page.extract_text() or ""
+
+            if plain_text.strip():
+                docs.append(Document(
+                    page_content=plain_text.strip(),
+                    metadata={"page": page_num, "source": file_path, "content_type": "text"}
+                ))
+
+            # ── each table becomes its own Document (never split) ──
+            for t_idx, table_obj in enumerate(tables_on_page):
+                rows = table_obj.extract()
+                if not rows:
+                    continue
+                header = rows[0]
+                md_lines = []
+                md_lines.append("| " + " | ".join(str(c) if c else "" for c in header) + " |")
+                md_lines.append("| " + " | ".join("---" for _ in header) + " |")
+                for row in rows[1:]:
+                    md_lines.append("| " + " | ".join(str(c) if c else "" for c in row) + " |")
+                docs.append(Document(
+                    page_content="\n".join(md_lines),
+                    metadata={"page": page_num, "source": file_path,
+                               "content_type": "table", "table_index": t_idx}
+                ))
+    return docs
 
 # ── API KEY ───────────────────────────────────────────────────────────────────
 try:
@@ -95,8 +145,31 @@ def is_multi_company_query(query: str) -> bool:
     ]
     return any(kw in q for kw in multi_signals)
 
+TABLE_QUERY_KEYWORDS = [
+    "revenue", "income", "profit", "loss", "expense", "cost", "margin",
+    "earnings", "cash", "debt", "asset", "liability", "equity", "segment",
+    "billion", "million", "percent", "%", "growth", "ratio", "eps",
+    "r&d", "capex", "operating", "net", "gross", "total", "table",
+    "营收", "利润", "收入", "费用", "净利", "毛利", "资产", "负债",
+]
+
+def is_table_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in TABLE_QUERY_KEYWORDS)
+
 def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single: int = 15) -> str:
     loaded_companies = st.session_state.get("loaded_companies", ALL_COMPANIES)
+    extra_table_docs = []
+
+    # For financial/numeric queries, always pull top table chunks as well
+    if is_table_query(query):
+        try:
+            table_retriever = vector_store.as_retriever(
+                search_kwargs={"k": 10, "filter": {"content_type": "table"}}
+            )
+            extra_table_docs = table_retriever.invoke(query)
+        except Exception:
+            pass
 
     if is_multi_company_query(query):
         all_docs = []
@@ -112,6 +185,7 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
                 retriever = vector_store.as_retriever(search_kwargs={"k": k_per_company})
                 docs = retriever.invoke(f"{query} {company}")
                 all_docs.extend(docs)
+        all_docs = all_docs + [d for d in extra_table_docs if d not in all_docs]
         return "\n\n".join([d.page_content for d in all_docs])
     else:
         q_lower = query.lower()
@@ -123,6 +197,7 @@ def retrieve_context(vector_store, query: str, k_per_company: int = 5, k_single:
         enriched = f"{query} {boost}".strip()
         retriever = vector_store.as_retriever(search_kwargs={"k": k_single})
         docs = retriever.invoke(enriched)
+        docs = docs + [d for d in extra_table_docs if d not in docs]
         return "\n\n".join([d.page_content for d in docs])
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
@@ -134,13 +209,25 @@ Your behavior:
 - When citing numbers, always include the fiscal year (e.g. "Amazon's 2024 10-K states...")
 - Always prioritize the most recent fiscal year figures available in the document (2024). If multiple years appear in the context, use the 2024 figures unless the question specifically asks about a different year.
 - If a question asks you to compare companies, structure your answer company by company
+- If the answer can be found in the provided documents, 
+  follow the instruction of the question carefully 
+  and answer based on the information on the document
 - If the answer is not found in the provided documents, say clearly:
   "This information is not available in the uploaded 10-K filings."
   Do not guess or use outside knowledge to fill gaps.
-- If the question is subjective or ambiguous (e.g. "which company is best?", "who is winning?", "who is doing better?"), do NOT refuse. Instead, interpret it as a financial performance comparison and answer using the most relevant available metrics such as revenue, operating income, net income, or growth rate. Structure your answer company by company and let the data speak for itself.
+- If the question is subjective or ambiguous 
+  (e.g. "which company is best?", "who is winning?", "who is doing better?"), do NOT refuse. 
+  Instead, interpret it as a financial performance comparison and answer 
+  using the most relevant available metrics such as revenue, 
+  operating income, net income, or growth rate. 
+  Structure your answer company by company and let the data speak for itself.
 - For financial figures, always include units (billions, millions, %) and the time period
 - Flag any notable risks or caveats when discussing financial health
--Answer the questions in the same language the user used, unless explicitly specified.
+- Answer the questions in the same language the user used, unless explicitly specified.
+- Some context will contain markdown tables (lines starting with |). Read them carefully:
+  the first row is the header (column names), subsequent rows are data rows.
+  Always locate the correct column AND the correct row before extracting a number.
+  Do NOT confuse values from different rows or columns.
 
 Your tone:
 - Professional but conversational — like a senior analyst briefing an executive
@@ -668,8 +755,7 @@ with right_col:
                 temp_file_path = os.path.join(temp_dir, file.name)
                 with open(temp_file_path, "wb") as f:
                     f.write(file.getbuffer())
-                loader = PyPDFLoader(temp_file_path)
-                raw_docs = loader.load()
+                raw_docs = load_pdf_with_tables(temp_file_path)
                 fname = file.name.lower()
                 if "amazon" in fname:
                     company_name = "Amazon"
@@ -695,7 +781,9 @@ with right_col:
         progress_bar.progress(80)
 
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
-        split_docs = text_splitter.split_documents(documents)
+        text_docs  = [d for d in documents if d.metadata.get("content_type") != "table"]
+        table_docs = [d for d in documents if d.metadata.get("content_type") == "table"]
+        split_docs = text_splitter.split_documents(text_docs) + table_docs
         st.session_state.chunk_count = len(split_docs)
 
         progress_bar.progress(95)
