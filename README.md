@@ -93,8 +93,8 @@ We evaluated several language models for financial document question answering. 
 | Model | Strengths | Weaknesses | Observations |
 |------|------|------|------|
 | **GPT-4o** | Highly reliable answers, strong reasoning over financial text, consistent citation alignment | Slightly slower than lightweight models | Produced the most grounded answers when paired with retrieved document chunks. Best overall performance for financial QA. |
-| **DeepSeek** | Fast response time, good general reasoning | Occasionally introduced unsupported financial figures | Performed well for simple queries but struggled with strict citation grounding in some tests. |
-| **Gemini** | Balanced speed and reasoning ability | Less consistent with financial terminology | Capable responses but sometimes missed key context from retrieved passages. |
+| **DeepSeek 1r: 7b** | Fast response time, good general reasoning | Occasionally introduced unsupported financial figures | Performed well for simple queries but struggled with strict citation grounding in some tests. |
+| **Mistral** | Balanced speed and reasoning ability | Less consistent with financial terminology | Capable responses but sometimes missed key context from retrieved passages. |
 
 **Final Model Choice:** GPT-4o
 
@@ -110,7 +110,7 @@ Several embedding approaches were considered for indexing financial documents in
 | Embedding Model | Strengths | Weaknesses | Observations |
 |------|------|------|------|
 | **OpenAI text-embedding-3-small** | Strong semantic similarity performance, stable across long financial passages, widely supported in LangChain | Slightly higher API cost than local embeddings | Produced the most consistent retrieval results when querying financial filings. |
-| **SentenceTransformers (MiniLM)** | Fast and lightweight, can run locally | Lower retrieval precision on financial language | Good for experimentation but occasionally retrieved loosely related passages. |
+| **Ollama (nomic embeddings)** | Fast and lightweight, can run locally | Lower retrieval precision on financial language | Good for experimentation but occasionally retrieved loosely related passages. |
 | **Instructor Embeddings** | Designed for task-specific embedding generation | More complex setup | Showed promise but did not significantly outperform text-embedding-3-small in our experiments. |
 
 **Final Embedding Choice:** OpenAI text-embedding-3-small
