@@ -127,9 +127,9 @@ init_session_state()
 
 # ── SMART RETRIEVAL ───────────────────────────────────────────────────────────
 COMPANY_KEYWORDS = {
-    "Amazon":            ["amazon", "aws"],
-    "Alphabet (Google)": ["alphabet", "google", "youtube"],
-    "Microsoft":         ["microsoft", "azure", "linkedin"],
+    "Amazon":            ["amazon", "aws","亚马逊"],
+    "Alphabet (Google)": ["alphabet", "google", "youtube","谷歌"],
+    "Microsoft":         ["microsoft", "azure", "linkedin","微软"],
 }
 
 ALL_COMPANIES = ["Amazon", "Alphabet (Google)", "Microsoft"]
@@ -208,7 +208,7 @@ Your behavior:
 - Always specify WHICH company and WHICH document section your answer comes from
 - When citing numbers, always include the fiscal year (e.g. "Amazon's 2024 10-K states...")
 - Always prioritize the most recent fiscal year figures available in the document (2024). If multiple years appear in the context, use the 2024 figures unless the question specifically asks about a different year.
-- If a question asks you to compare companies, structure your answer company by company
+- If a question asks you to compare companies, go through all the companies that all the documents are about, and structure your answer company by company
 - If the answer can be found in the provided documents, 
   follow the instruction of the question carefully 
   and answer based on the information on the document
@@ -217,17 +217,24 @@ Your behavior:
   Do not guess or use outside knowledge to fill gaps.
 - If the question is subjective or ambiguous 
   (e.g. "which company is best?", "who is winning?", "who is doing better?"), do NOT refuse. 
-  Instead, interpret it as a financial performance comparison and answer 
+  Instead, interpret it as a financial performance comparison and answer O
   using the most relevant available metrics such as revenue, 
   operating income, net income, or growth rate. 
   Structure your answer company by company and let the data speak for itself.
 - For financial figures, always include units (billions, millions, %) and the time period
 - Flag any notable risks or caveats when discussing financial health
-- Answer the questions in the same language the user used, unless explicitly specified.
+- 1. Detect the language of the user's question.
+2. Translate the user's question into English for document retrieval.
+All document searches must be conducted in English because the source documents are written in English.
+3. Use the English version of the question to retrieve relevant information from the document database.
+4. Generate the final answer in the SAME language as the user's original question.
 - Some context will contain markdown tables (lines starting with |). Read them carefully:
   the first row is the header (column names), subsequent rows are data rows.
   Always locate the correct column AND the correct row before extracting a number.
   Do NOT confuse values from different rows or columns.
+-The retrieval for each question must focus primarily on the company mentioned in the current query. Do not allow previous discussions (e.g., about Microsoft) to cause the system to ignore or overlook queries regarding a different company (e.g., Amazon) in the current turn.
+-If the question is to evaluate companies in any aspect, you must provide any related data based on the document also include data in markdown tables, you must also give necessary calculation and show relevant values to support your result.
+-Semantic Expansion & Association: Proactively bridge the gap between user terms and technical document terminology. For example, if a user asks about "Cloud Services," you must associate this with "AWS" (for Amazon), "Azure" (for Microsoft), or "Google Cloud" (for Alphabet). Treat logically equivalent concepts as matches even if the exact wording differs.
 
 Your tone:
 - Professional but conversational — like a senior analyst briefing an executive
@@ -894,12 +901,49 @@ with right_col:
                     except json.JSONDecodeError:
                         response_text = "I wasn't able to extract structured data for a chart. Try rephrasing, e.g. 'bar chart of revenue across all three companies'."
 
+                #new
                 else:
+                    # --- Context Switching Logic ---
+                    # Check if the current query mentions a specific company to avoid context pollution
+                    current_q_lower = pending.lower()
+                    
+                    # Identifies if the user is switching to a different company topic
+                    is_switching_context = any(
+                        kw in current_q_lower 
+                        for keywords in COMPANY_KEYWORDS.values() 
+                        for kw in keywords
+                    )
+
                     history_context = ""
-                    if st.session_state.chat_history:
+                    # If a new company is mentioned, we skip the chat history to ensure clean retrieval
+                    if st.session_state.chat_history and not is_switching_context:
                         last_human, last_ai = st.session_state.chat_history[-1]
-                        history_context = f"Previous question: {last_human}\nPrevious answer summary: {last_ai[:300]}\n\nFollow-up: "
-                    enriched_query = history_context + pending
+                        # Use a summarized version of the previous exchange for context
+                        history_context = f"Previous topic: {last_human}\n\n"
+                    
+                    # Build the final query for the vector database
+                    # If is_switching_context is True, enriched_query will only contain the current 'pending' question
+                    enriched_query = (history_context + pending).strip()
+
+                    # --- RAG Retrieval and Completion ---
+                    # Perform vector search using the cleaned/enriched query
+                    context      = retrieve_context(st.session_state.vector_store, enriched_query)
+                    
+                    # Build the prompt with retrieved context and send to LLM
+                    prompt       = build_qa_prompt(context, enriched_query)
+                    input_tokens = len(encoding.encode(prompt))
+
+                    with st.spinner("FinSight is thinking…"):
+                        response_text = get_llm_creative().invoke(prompt).content.strip()
+
+                    output_tokens = len(encoding.encode(response_text))
+
+                    # Update chat history with the current turn (keep last 3 exchanges)
+                    st.session_state.chat_history.append((pending, response_text))
+                    if len(st.session_state.chat_history) > 3:
+                        st.session_state.chat_history = st.session_state.chat_history[-3:]
+
+                        # new end
 
                     context      = retrieve_context(st.session_state.vector_store, enriched_query)
                     prompt       = build_qa_prompt(context, enriched_query)
