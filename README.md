@@ -23,45 +23,61 @@ An AI-powered chatbot that analyzes 10-K filings and other financial documents f
 
 **Model:** GPT-4o with a custom financial analyst system prompt that enforces source citation, fiscal year attribution, and no outside knowledge.
 
-**Architecture:** Custom RAG pipeline with retrieval logic → FAISS vector store → OpenAI text-embedding-3-small embeddings → GPT-4o
+**Architecture:** Custom RAG pipeline with table-aware ingestion → FAISS vector store → OpenAI text-embedding-3-small embeddings → GPT-4o
 
 **RAG Settings:**
 
 | Parameter | Value |
 |-----------|-------|
-| Chunk Size | 1500 tokens |
+| PDF Loader | pdfplumber (text + table-aware) |
+| Chunk Size | 1500 tokens (text only; tables are never split) |
 | Chunk Overlap | 200 tokens |
 | Top-K (single-company retrieval) | 15 |
 | Top-K (multi-company retrieval) | 5 per company (up to 15 total) |
+| Top-K (table retrieval for numeric queries) | 10 additional table chunks |
 | Temperature (text queries) | 0.1 |
 | Temperature (visual queries) | 0.0 |
 
-**Note: Two GPT-4o instances are used: a deterministic model (temperature 0.0) for visual JSON generation and a low-temperature model (0.1) for natural language answers.*
+**Note:** Two GPT-4o instances are used — a deterministic model (temperature 0.0) for visual JSON generation and a low-temperature model (0.1) for natural language answers. With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations.
 
-With the low temperature approach along with giving the RAG a strictly objective persona, we were able to almost eliminate hallucinations. 
+---
+
+### Ingestion
+
+We originally loaded PDFs using PyPDFLoader from LangChain, which is a text-only parser that cannot capture embedded images, charts, or figures. We upgraded to **pdfplumber**, which separates text and tables during extraction:
+
+- **Text** is chunked at 1,500 tokens with 200-token overlap using `RecursiveCharacterTextSplitter`
+- **Tables** are extracted into markdown format and stored as their own individual documents — they are **never split**, since a chunk boundary cutting through a financial table would make the numbers meaningless
+- Every chunk is tagged with two metadata fields at ingestion time: **company** (from filename) and **content_type** (text or table)
 
 ---
 
 ### Retrieval Strategy
 
-FinSight uses a lightweight query classifier to determine whether a user question is about a single company or requires cross-company comparison.
+FinSight uses a two-layer query classifier:
 
-- **Single-company queries** retrieve the top **15 most relevant chunks** from the FAISS vector store.
-- **Multi-company queries** (e.g., “compare”, “vs”, “which company”, “between”, “all three”) trigger **balanced retrieval**, where the system retrieves **5 chunks per company** to ensure that each firm's filing contributes context.
+**Layer 1 — Company scope:**
+- **Single-company queries** retrieve the top **15 most relevant chunks** from the FAISS vector store
+- **Multi-company queries** (e.g., "compare", "vs", "which company", "all three") trigger **balanced retrieval** — 5 chunks per company filtered by metadata, ensuring each firm's filing contributes equally to the context
+
+**Layer 2 — Content type:**
+- For financially numeric queries (containing keywords like "revenue", "margin", "operating income", etc.), an additional retrieval pass pulls the top **10 table chunks** from the index and appends them to the context
+- This ensures the model is reading from actual structured financial tables when answering questions about specific figures, not just surrounding prose
 
 ---
 
 ## ⚙️ Tech Stack
 
-| Component               | Tool           |
-| ----------------------- | -------------- |
-| UI                      | Streamlit      |
-| RAG Framework           | LangChain (for document loading/splitting only) |
-| Vector Database         | FAISS          |
-| Embeddings              | OpenAI text-embedding-3-small |
-| LLM                     | GPT-4o         |
-| Visualization           | Plotly         |
-| Local Model Experiments | Ollama         |
+| Component | Tool |
+|-----------|------|
+| UI | Streamlit |
+| PDF Parsing | pdfplumber |
+| RAG Framework | LangChain (text splitting only) |
+| Vector Database | FAISS |
+| Embeddings | OpenAI text-embedding-3-small |
+| LLM | GPT-4o |
+| Visualization | Plotly |
+| Local Model Experiments | Ollama |
 
 ---
 
@@ -80,7 +96,7 @@ We evaluated several language models for financial document question answering. 
 | **DeepSeek** | Fast response time, good general reasoning | Occasionally introduced unsupported financial figures | Performed well for simple queries but struggled with strict citation grounding in some tests. |
 | **Gemini** | Balanced speed and reasoning ability | Less consistent with financial terminology | Capable responses but sometimes missed key context from retrieved passages. |
 
-**Final Model Choice:** GPT-4o  
+**Final Model Choice:** GPT-4o
 
 GPT-4o demonstrated the strongest ability to remain grounded in retrieved passages and maintain accurate financial references, making it the most suitable model for the FinSight RAG system.
 
@@ -97,7 +113,7 @@ Several embedding approaches were considered for indexing financial documents in
 | **SentenceTransformers (MiniLM)** | Fast and lightweight, can run locally | Lower retrieval precision on financial language | Good for experimentation but occasionally retrieved loosely related passages. |
 | **Instructor Embeddings** | Designed for task-specific embedding generation | More complex setup | Showed promise but did not significantly outperform text-embedding-3-small in our experiments. |
 
-**Final Embedding Choice:** OpenAI text-embedding-3-small  
+**Final Embedding Choice:** OpenAI text-embedding-3-small
 
 text-embedding-3-small provided the most consistent retrieval quality when searching across multiple companies' 10-K filings, making it the best fit for the FAISS vector store used in this project.
 
@@ -107,9 +123,22 @@ text-embedding-3-small provided the most consistent retrieval quality when searc
 
 ## 🧩 System Architecture
 
-FinSight uses a Retrieval-Augmented Generation pipeline:
+FinSight uses a table-aware Retrieval-Augmented Generation pipeline:
 
-10-K PDFs → Text Chunking (1500 tokens, 200 overlap) → OpenAI text-embedding-3-small → FAISS Vector Store → Custom Retrieval (k=15 single / k=5×n multi-company) → Custom Prompt Construction → GPT-4o → Answer + Source Citation + Plotly Visualization
+```
+10-K PDFs
+  → pdfplumber (text + table extraction)
+  → Text: RecursiveCharacterTextSplitter (1500 tokens, 200 overlap)
+     Tables: stored whole as markdown documents (never split)
+  → OpenAI text-embedding-3-small
+  → FAISS Vector Store (tagged with company + content_type metadata)
+  → Two-layer retrieval:
+      Layer 1: single-company (k=15) or multi-company (k=5×n, metadata filtered)
+      Layer 2: +10 table chunks for numeric/financial queries
+  → Custom Prompt Construction (system prompt + context + chat history)
+  → GPT-4o (temperature 0.0 for visuals / 0.1 for text)
+  → Answer + Source Citation + Plotly Visualization
+```
 
 ---
 
@@ -119,11 +148,11 @@ Tested with three queries: Amazon revenue, cross-company operating income, and M
 
 | Chunk Size | Strength | Weakness |
 |------------|----------|----------|
-|  500 | Got Alphabet's exact total ($112.4B) | Lost Microsoft's total entirely |
+| 500 | Got Alphabet's exact total ($112.4B) | Lost Microsoft's total entirely |
 | 1000 | Consistent results across all three companies | Alphabet total missing; got segment deltas instead |
 | **1500** | Richest cross-company narrative, full context | Risk factors drifted to IP/AI topics vs. core cybersecurity |
 
-**We decided to go with the 1500 chunk size.** Reasoning: 500 chunk size was inconsistent across companies; and 1000 chunk size was still not giving the model the entire context. Anything above 1500 was too noisy. 
+**We decided to go with the 1500 chunk size.** Reasoning: 500 chunk size was inconsistent across companies; 1000 chunk size was still not giving the model the entire context. Anything above 1500 was too noisy.
 
 ---
 
